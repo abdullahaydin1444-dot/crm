@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skool CRM — Community Management</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ════════ LOGIN SCREEN ════════ -->
+<div id="login-screen" class="login-screen hidden">
+    <div class="login-container">
+        <div class="login-logo">
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                <rect width="48" height="48" rx="12" fill="#3b82f6"/>
+                <path d="M14 18C14 16.8954 14.8954 16 16 16H32C33.1046 16 34 16.8954 34 18V20C34 21.1046 33.1046 22 32 22H16C14.8954 22 14 21.1046 14 20V18Z" fill="white" opacity="0.9"/>
+                <path d="M14 26C14 24.8954 14.8954 24 16 24H26C27.1046 24 28 24.8954 28 26V28C28 29.1046 27.1046 30 26 30H16C14.8954 30 14 29.1046 14 28V26Z" fill="white" opacity="0.6"/>
+                <circle cx="34" cy="32" r="4" fill="#10b981"/>
+            </svg>
+        </div>
+        <h1 class="login-title">Skool CRM</h1>
+        <p class="login-subtitle">Community Management System</p>
+        <form id="login-form" autocomplete="on">
+            <div class="form-group">
+                <label for="login-email">E-Mail</label>
+                <input type="email" id="login-email" name="email" autocomplete="email" placeholder="crmtest2026@gmail.com" required>
+            </div>
+            <div class="form-group">
+                <label for="login-password">Passwort</label>
+                <input type="password" id="login-password" name="password" autocomplete="current-password" placeholder="••••••••" required>
+            </div>
+            <div id="login-error" class="login-error hidden"></div>
+            <button type="submit" class="btn btn-primary btn-block" id="login-btn">
+                <span>Anmelden</span>
+            </button>
+        </form>
+    </div>
+</div>
+
+<!-- ════════ MAIN APP ════════ -->
+<div id="app-wrapper" class="app-wrapper hidden">
+
+    <!-- ──── SIDEBAR ──── -->
+    <aside id="sidebar">
+        <div class="sidebar-header">
+            <div class="sidebar-logo">
+                <svg width="32" height="32" viewBox="0 0 48 48" fill="none">
+                    <rect width="48" height="48" rx="12" fill="#3b82f6"/>
+                    <path d="M14 18C14 16.8954 14.8954 16 16 16H32C33.1046 16 34 16.8954 34 18V20C34 21.1046 33.1046 22 32 22H16C14.8954 22 14 21.1046 14 20V18Z" fill="white" opacity="0.9"/>
+                    <path d="M14 26C14 24.8954 14.8954 24 16 24H26C27.1046 24 28 24.8954 28 26V28C28 29.1046 27.1046 30 26 30H16C14.8954 30 14 29.1046 14 28V26Z" fill="white" opacity="0.6"/>
+                    <circle cx="34" cy="32" r="4" fill="#10b981"/>
+                </svg>
+                <div class="sidebar-brand">
+                    <span class="brand-name">Skool CRM</span>
+                    <span class="brand-tag">Community Management</span>
+                </div>
+            </div>
+        </div>
+
+        <nav class="sidebar-nav">
+            <a href="#dashboard" class="nav-item" data-page="dashboard">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+                <span>Dashboard</span>
+            </a>
+            <a href="#members" class="nav-item" data-page="members">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <span>Mitglieder</span>
+            </a>
+            <a href="#kanban" class="nav-item" data-page="kanban">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="6" height="18" rx="1"/><rect x="9" y="3" width="6" height="12" rx="1"/><rect x="15" y="3" width="6" height="15" rx="1"/></svg>
+                <span>Kanban</span>
+            </a>
+            <a href="#team" class="nav-item" data-page="team">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span>Team</span>
+                <span id="team-badge" class="nav-badge hidden">0</span>
+            </a>
+            <a href="#import" class="nav-item" data-page="import">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <span>Import</span>
+            </a>
+            <a href="#settings" class="nav-item" data-page="settings">
+                <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <span>Einstellungen</span>
+            </a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="sidebar-user" id="sidebar-user">
+                <div class="user-avatar" id="sidebar-avatar">A</div>
+                <div class="user-info">
+                    <span class="user-name" id="sidebar-username">Admin</span>
+                    <span class="user-role" id="sidebar-role">Administrator</span>
+                </div>
+                <button class="btn-icon" id="logout-btn" title="Abmelden">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- ──── MOBILE HEADER ──── -->
+    <div class="mobile-header" id="mobile-header">
+        <button class="btn-icon" id="mobile-menu-btn">
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+        <span class="mobile-title">Skool CRM</span>
+        <button class="btn-icon" id="mobile-notif-btn">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+            <span class="notif-dot hidden" id="mobile-notif-dot"></span>
+        </button>
+    </div>
+    <div class="mobile-overlay hidden" id="mobile-overlay"></div>
+
+    <!-- ──── MAIN CONTENT ──── -->
+    <main id="main-content" class="main-content">
+
+        <!-- ── DASHBOARD PAGE ── -->
+        <div id="page-dashboard" class="page hidden">
+            <div class="page-header">
+                <h1>Dashboard</h1>
+                <div class="page-actions">
+                    <button class="btn btn-secondary btn-sm" id="btn-refresh-dashboard">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+                        Aktualisieren
+                    </button>
+                </div>
+            </div>
+            <div class="stats-grid" id="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-blue">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    </div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="stat-total">0</span>
+                        <span class="stat-label">Gesamt Mitglieder</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-green">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                    </div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="stat-paying">0</span>
+                        <span class="stat-label">Zahlende Mitglieder</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-purple">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                    </div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="stat-revenue">0 €</span>
+                        <span class="stat-label">Monatlicher Umsatz</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon stat-icon-red">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    </div>
+                    <div class="stat-info">
+                        <span class="stat-value" id="stat-atrisk">0</span>
+                        <span class="stat-label">Gefährdete Mitglieder</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dashboard-grid">
+                <div class="dash-section">
+                    <h3>Kanban-Übersicht</h3>
+                    <div class="funnel-overview" id="funnel-overview"></div>
+                </div>
+                <div class="dash-section">
+                    <h3>Meine Aufgaben</h3>
+                    <div class="my-tasks" id="my-tasks"></div>
+                </div>
+            </div>
+
+            <div class="dashboard-grid">
+                <div class="dash-section">
+                    <h3>Team-Aktivität</h3>
+                    <div class="activity-feed" id="activity-feed"></div>
+                </div>
+                <div class="dash-section">
+                    <h3>Mitglieder nach Stadt</h3>
+                    <div class="chart-container" id="chart-city"></div>
+                </div>
+            </div>
+
+            <div class="dashboard-grid">
+                <div class="dash-section">
+                    <h3>Mitgliedschaft</h3>
+                    <div class="chart-container" id="chart-membership"></div>
+                </div>
+                <div class="dash-section">
+                    <h3>Level-Verteilung</h3>
+                    <div class="chart-container" id="chart-level"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── MEMBERS PAGE ── -->
+        <div id="page-members" class="page hidden">
+            <div class="page-header">
+                <h1>Mitglieder</h1>
+                <div class="page-actions">
+                    <button class="btn btn-primary btn-sm" id="btn-add-member">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        Hinzufügen
+                    </button>
+                </div>
+            </div>
+            <div class="filter-bar" id="member-filters">
+                <div class="search-box">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input type="text" id="member-search" placeholder="Suchen...">
+                </div>
+                <select id="filter-status" class="filter-select">
+                    <option value="">Alle Status</option>
+                    <option value="active">Aktiv</option>
+                    <option value="at_risk">Gefährdet</option>
+                    <option value="inactive">Inaktiv</option>
+                </select>
+                <select id="filter-membership" class="filter-select">
+                    <option value="">Alle Mitgliedschaften</option>
+                    <option value="free">Free</option>
+                    <option value="monthly_97">Monatlich (97€)</option>
+                    <option value="yearly_697">Jährlich (697€)</option>
+                </select>
+                <select id="filter-level" class="filter-select">
+                    <option value="">Alle Level</option>
+                    <option value="beginner">Anfänger</option>
+                    <option value="intermediate">Fortgeschritten</option>
+                    <option value="advanced">Experte</option>
+                </select>
+            </div>
+            <div class="table-wrapper">
+                <table class="data-table" id="members-table">
+                    <thead>
+                        <tr>
+                            <th class="sortable" data-sort="name">Name</th>
+                            <th>Mitgliedschaft</th>
+                            <th>Status</th>
+                            <th>Level</th>
+                            <th>Stadt</th>
+                            <th>Funnel</th>
+                            <th>Zuständig</th>
+                            <th class="sortable" data-sort="last_active">Letzte Aktivität</th>
+                        </tr>
+                    </thead>
+                    <tbody id="members-tbody"></tbody>
+                </table>
+            </div>
+            <div class="empty-state hidden" id="members-empty">
+                <svg viewBox="0 0 120 120" width="80" height="80" fill="none">
+                    <circle cx="60" cy="60" r="50" stroke="var(--border-light)" stroke-width="2" stroke-dasharray="8 4"/>
+                    <circle cx="45" cy="50" r="8" stroke="var(--text-muted)" stroke-width="2"/>
+                    <circle cx="75" cy="50" r="8" stroke="var(--text-muted)" stroke-width="2"/>
+                    <path d="M40 75 Q60 85 80 75" stroke="var(--text-muted)" stroke-width="2" fill="none"/>
+                </svg>
+                <p>Keine Mitglieder gefunden</p>
+                <button class="btn btn-secondary btn-sm" id="btn-load-demo">Demo-Daten laden</button>
+            </div>
+        </div>
+
+        <!-- ── MEMBER DETAIL PAGE ── -->
+        <div id="page-member-detail" class="page hidden">
+            <div class="breadcrumbs" id="member-breadcrumbs">
+                <a href="#members">Mitglieder</a>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+                <span id="breadcrumb-name">—</span>
+            </div>
+            <div class="member-detail-layout">
+                <!-- LEFT: Member Info -->
+                <div class="member-info-panel" id="member-info-panel">
+                    <div class="member-header-card">
+                        <div class="member-avatar-lg" id="detail-avatar"></div>
+                        <h2 id="detail-name"></h2>
+                        <p class="text-muted" id="detail-username"></p>
+                        <div class="member-badges" id="detail-badges"></div>
+                    </div>
+                    <div class="member-fields" id="detail-fields"></div>
+                    <div class="member-actions" id="detail-actions">
+                        <button class="btn btn-secondary btn-sm btn-block" id="btn-edit-member">Bearbeiten</button>
+                        <button class="btn btn-danger btn-sm btn-block" id="btn-delete-member">Löschen</button>
+                    </div>
+                </div>
+
+                <!-- RIGHT: Timeline + Posts -->
+                <div class="member-activity-panel">
+                    <div class="panel-tabs">
+                        <button class="panel-tab active" data-tab="timeline">Verlauf</button>
+                        <button class="panel-tab" data-tab="posts">Beiträge</button>
+                        <button class="panel-tab" data-tab="notes">Notizen</button>
+                    </div>
+
+                    <!-- Timeline Tab -->
+                    <div class="panel-content active" id="tab-timeline">
+                        <div class="timeline-feed" id="timeline-feed"></div>
+                        <div class="timeline-input">
+                            <div class="timeline-input-header">
+                                <select id="timeline-type" class="filter-select">
+                                    <option value="note">Aktennotiz</option>
+                                    <option value="call">Telefonnotiz</option>
+                                    <option value="meeting">Besprechungsnotiz</option>
+                                    <option value="message_out">Ausgehende Nachricht</option>
+                                    <option value="message_in">Eingehende Nachricht</option>
+                                </select>
+                                <select id="timeline-channel" class="filter-select">
+                                    <option value="">Kein Kanal</option>
+                                    <option value="skool">Skool</option>
+                                    <option value="email">E-Mail</option>
+                                    <option value="phone">Telefon</option>
+                                    <option value="whatsapp">WhatsApp</option>
+                                </select>
+                            </div>
+                            <div class="timeline-input-body">
+                                <textarea id="timeline-content" placeholder="Eintrag verfassen..." rows="3"></textarea>
+                                <div class="timeline-input-actions">
+                                    <label class="btn-icon btn-upload" title="Audio hochladen">
+                                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                                        <input type="file" id="timeline-audio" accept="audio/mp3,audio/wav,audio/ogg,audio/webm,.mp3,.wav,.ogg,.webm" hidden>
+                                    </label>
+                                    <span id="audio-filename" class="audio-filename"></span>
+                                    <button class="btn btn-primary btn-sm" id="btn-add-timeline">Speichern</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Posts Tab -->
+                    <div class="panel-content" id="tab-posts">
+                        <div id="posts-feed"></div>
+                    </div>
+
+                    <!-- Notes Tab (legacy) -->
+                    <div class="panel-content" id="tab-notes">
+                        <div id="notes-content"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── KANBAN PAGE ── -->
+        <div id="page-kanban" class="page hidden">
+            <div class="page-header">
+                <h1>Kanban Board</h1>
+                <div class="page-actions">
+                    <div class="kanban-filter" id="kanban-filter">
+                        <span class="filter-label">Zuständig:</span>
+                        <div class="kanban-filter-chips" id="kanban-filter-chips"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="kanban-board" id="kanban-board">
+                <div class="kanban-column" data-stage="free_community">
+                    <div class="kanban-column-header">
+                        <span class="kanban-col-dot" style="background:#3b82f6"></span>
+                        <h3>Free Community</h3>
+                        <span class="kanban-count" id="kanban-count-free">0</span>
+                    </div>
+                    <div class="kanban-cards" id="kanban-free" data-stage="free_community"></div>
+                </div>
+                <div class="kanban-column" data-stage="recently_cancelled">
+                    <div class="kanban-column-header">
+                        <span class="kanban-col-dot" style="background:#f59e0b"></span>
+                        <h3>Kürzlich Gekündigt</h3>
+                        <span class="kanban-count" id="kanban-count-recent">0</span>
+                    </div>
+                    <div class="kanban-cards" id="kanban-recent" data-stage="recently_cancelled"></div>
+                </div>
+                <div class="kanban-column" data-stage="long_cancelled">
+                    <div class="kanban-column-header">
+                        <span class="kanban-col-dot" style="background:#ef4444"></span>
+                        <h3>Länger Gekündigt</h3>
+                        <span class="kanban-count" id="kanban-count-long">0</span>
+                    </div>
+                    <div class="kanban-cards" id="kanban-long" data-stage="long_cancelled"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── TEAM PAGE ── -->
+        <div id="page-team" class="page hidden">
+            <div class="page-header">
+                <h1>Team-Nachrichten</h1>
+            </div>
+            <div class="team-layout">
+                <div class="team-compose">
+                    <h3>Neue Nachricht</h3>
+                    <div class="form-group">
+                        <label>An:</label>
+                        <select id="team-msg-to" class="filter-select"></select>
+                    </div>
+                    <div class="form-group">
+                        <label>Mitglied-Kontext (optional):</label>
+                        <select id="team-msg-member" class="filter-select">
+                            <option value="">— Kein Mitglied —</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <textarea id="team-msg-content" placeholder="Nachricht schreiben..." rows="4"></textarea>
+                    </div>
+                    <button class="btn btn-primary btn-sm" id="btn-send-team-msg">Senden</button>
+                </div>
+                <div class="team-messages-list" id="team-messages-list">
+                    <div class="empty-state">
+                        <svg viewBox="0 0 120 120" width="60" height="60" fill="none">
+                            <rect x="20" y="30" width="80" height="55" rx="8" stroke="var(--text-muted)" stroke-width="2"/>
+                            <path d="M20 45L60 65L100 45" stroke="var(--text-muted)" stroke-width="2" fill="none"/>
+                        </svg>
+                        <p>Keine Nachrichten</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── IMPORT PAGE ── -->
+        <div id="page-import" class="page hidden">
+            <div class="page-header">
+                <h1>Daten Import</h1>
+            </div>
+            <div class="import-layout">
+                <div class="import-card">
+                    <h3>Mitglieder importieren</h3>
+                    <p class="text-muted">JSON-Datei mit Mitglieder-Daten hochladen (Array von Objekten).</p>
+                    <div class="import-drop" id="import-members-drop">
+                        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        <span>Datei hierher ziehen oder klicken</span>
+                        <input type="file" id="import-members-file" accept=".json" hidden>
+                    </div>
+                    <div id="import-members-result" class="import-result"></div>
+                </div>
+                <div class="import-card">
+                    <h3>Posts importieren</h3>
+                    <p class="text-muted">JSON-Datei mit Post-Daten hochladen.</p>
+                    <div class="import-drop" id="import-posts-drop">
+                        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                        <span>Datei hierher ziehen oder klicken</span>
+                        <input type="file" id="import-posts-file" accept=".json" hidden>
+                    </div>
+                    <div id="import-posts-result" class="import-result"></div>
+                </div>
+                <div class="import-card">
+                    <h3>Demo-Daten</h3>
+                    <p class="text-muted">Beispieldaten laden, um die App zu testen.</p>
+                    <button class="btn btn-secondary" id="btn-import-demo">Demo-Daten laden</button>
+                    <div id="import-demo-result" class="import-result"></div>
+                </div>
+                <div class="import-card">
+                    <h3>Daten exportieren</h3>
+                    <p class="text-muted">Alle Daten als JSON herunterladen.</p>
+                    <button class="btn btn-secondary" id="btn-export-data">Exportieren</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── SETTINGS PAGE ── -->
+        <div id="page-settings" class="page hidden">
+            <div class="page-header">
+                <h1>Einstellungen</h1>
+            </div>
+            <div class="settings-layout">
+                <div class="settings-section">
+                    <h3>Team-Mitglieder</h3>
+                    <p class="text-muted">Benutzer verwalten und neue Team-Mitglieder einladen.</p>
+                    <div id="users-list" class="users-list"></div>
+                    <div class="settings-add-user" id="add-user-section">
+                        <h4>Neues Team-Mitglied</h4>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Benutzername</label>
+                                <input type="text" id="new-user-username" placeholder="benutzername">
+                            </div>
+                            <div class="form-group">
+                                <label>Anzeigename</label>
+                                <input type="text" id="new-user-display" placeholder="Max Mustermann">
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>E-Mail</label>
+                                <input type="email" id="new-user-email" placeholder="mail@example.com">
+                            </div>
+                            <div class="form-group">
+                                <label>Passwort</label>
+                                <input type="password" id="new-user-password" placeholder="••••••••">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label>Rolle</label>
+                            <select id="new-user-role" class="filter-select">
+                                <option value="member">Mitarbeiter</option>
+                                <option value="admin">Administrator</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary btn-sm" id="btn-create-user">Benutzer erstellen</button>
+                        <div id="create-user-result" class="import-result"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+</div>
+
+<!-- ════════ MODALS ════════ -->
+<div class="modal-overlay hidden" id="modal-overlay">
+    <div class="modal" id="modal">
+        <div class="modal-header">
+            <h3 id="modal-title">Modal</h3>
+            <button class="btn-icon modal-close" id="modal-close">
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div class="modal-body" id="modal-body"></div>
+        <div class="modal-footer" id="modal-footer"></div>
+    </div>
+</div>
+
+<!-- ════════ TOAST ════════ -->
+<div id="toast-container" class="toast-container"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
