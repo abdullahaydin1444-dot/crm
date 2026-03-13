@@ -446,6 +446,20 @@
                     </div>
                     <div id="import-posts-result" class="import-result"></div>
                 </div>
+                <div class="import-card import-card-wide">
+                    <h3>📋 Skool JSON einfügen</h3>
+                    <p class="text-muted">Skool-Scraper JSON hier direkt einfügen — Posts, Kommentare und Mitglieder werden automatisch importiert und verknüpft.</p>
+                    <textarea id="import-json-paste" class="import-json-textarea" rows="10" placeholder='[{"url":"...","title":"...","author":{...},"comments":[...]}]'></textarea>
+                    <div class="import-paste-actions">
+                        <button class="btn btn-primary" id="btn-import-json-paste">📋 JSON Importieren</button>
+                        <button class="btn btn-secondary" id="btn-clear-json-paste">Leeren</button>
+                    </div>
+                    <div id="import-json-progress" class="import-progress hidden">
+                        <div class="import-progress-bar"><div class="import-progress-fill" id="import-progress-fill"></div></div>
+                        <span id="import-progress-text" class="import-progress-text"></span>
+                    </div>
+                    <div id="import-json-result" class="import-result"></div>
+                </div>
                 <div class="import-card">
                     <h3>Demo-Daten</h3>
                     <p class="text-muted">Beispieldaten laden, um die App zu testen.</p>

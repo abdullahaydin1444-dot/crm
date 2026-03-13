@@ -1,4 +1,4 @@
-﻿/* ═══════════════════════════════════════════
+/* ═══════════════════════════════════════════
    Skool CRM — Community Management System
    Complete SPA with Supabase Auth + REST API
    OWASP-konform · 12.03.2026
@@ -1126,8 +1126,13 @@ async function importFile(type) {
     try {
         const text = await file.text();
         const data = JSON.parse(text);
-        const table = type === 'members' ? 'members' : 'posts';
-        const { error } = await sb.from(table).insert(Array.isArray(data) ? data : [data]);
+        if (type === 'posts') {
+            // Use the Skool import pipeline for posts
+            await importSkoolJSON(JSON.stringify(data));
+            fileInput.value = '';
+            return;
+        }
+        const { error } = await sb.from('members').insert(Array.isArray(data) ? data : [data]);
         if (error) throw error;
         resultEl.className = 'import-result success';
         resultEl.textContent = `Daten erfolgreich importiert`;
@@ -1135,6 +1140,155 @@ async function importFile(type) {
     } catch (err) {
         resultEl.className = 'import-result error';
         resultEl.textContent = err.message;
+    }
+}
+
+// ─── Skool JSON Import Pipeline ──────────
+async function importSkoolJSON(jsonText) {
+    const resultEl = $('import-json-result');
+    const progressEl = $('import-json-progress');
+    const progressFill = $('import-progress-fill');
+    const progressText = $('import-progress-text');
+
+    try {
+        // Parse
+        let posts;
+        try {
+            posts = JSON.parse(jsonText);
+        } catch { throw new Error('Ungültiges JSON — bitte überprüfe das Format.'); }
+        if (!Array.isArray(posts)) posts = [posts];
+        if (posts.length === 0) throw new Error('Leeres Array — keine Posts gefunden.');
+
+        progressEl.classList.remove('hidden');
+        resultEl.className = 'import-result';
+        resultEl.textContent = '';
+
+        // Load existing members for matching
+        const { data: existingMembers } = await sb.from('members').select('id, name, skool_username');
+        const memberMap = new Map();
+        (existingMembers || []).forEach(m => {
+            if (m.skool_username) memberMap.set(m.skool_username, m);
+        });
+
+        let totalPosts = 0, totalComments = 0, totalNewMembers = 0;
+        const totalSteps = posts.length;
+
+        // Helper: find or create member by skool username
+        async function findOrCreateMember(authorName, authorUsername) {
+            if (!authorUsername) return null;
+            if (memberMap.has(authorUsername)) return memberMap.get(authorUsername);
+
+            // Create new member
+            const { data: newMember, error } = await sb.from('members')
+                .insert({ name: authorName || authorUsername, skool_username: authorUsername })
+                .select('id, name, skool_username')
+                .single();
+            if (error) { console.warn('Member create error:', error.message); return null; }
+            memberMap.set(authorUsername, newMember);
+            totalNewMembers++;
+            return newMember;
+        }
+
+        for (let i = 0; i < posts.length; i++) {
+            const post = posts[i];
+            const pct = Math.round(((i + 1) / totalSteps) * 100);
+            progressFill.style.width = pct + '%';
+            progressText.textContent = `Post ${i + 1} von ${totalSteps}...`;
+
+            // Find/create post author
+            const authorUsername = post.author?.username || null;
+            const authorName = post.author?.name || 'Unbekannt';
+            const authorProfileUrl = post.author?.profile_url || null;
+            const member = await findOrCreateMember(authorName, authorUsername);
+
+            // Insert post
+            const postRow = {
+                member_id: member ? member.id : null,
+                post_title: post.title || null,
+                post_content: post.content || null,
+                post_url: post.url || null,
+                likes: post.likes_count || 0,
+                comments: post.comments_count || 0,
+                author_name: authorName,
+                author_username: authorUsername,
+                author_profile_url: authorProfileUrl,
+                category: post.category || null,
+                scraped_at: post.scraped_at || null,
+                posted_at: null // Skool dates are relative, can't parse reliably
+            };
+
+            const { data: insertedPost, error: postErr } = await sb.from('posts')
+                .insert(postRow)
+                .select('id')
+                .single();
+            if (postErr) { console.warn('Post insert error:', postErr.message); continue; }
+            totalPosts++;
+
+            // Insert comments
+            const comments = post.comments || [];
+            if (comments.length > 0) {
+                const commentRows = [];
+                for (const c of comments) {
+                    const cUsername = c.author?.username || null;
+                    const cName = c.author?.name || 'Unbekannt';
+                    const cProfileUrl = c.author?.profile_url || null;
+                    const cMember = await findOrCreateMember(cName, cUsername);
+
+                    commentRows.push({
+                        post_id: insertedPost.id,
+                        member_id: cMember ? cMember.id : null,
+                        author_name: cName,
+                        author_username: cUsername,
+                        author_profile_url: cProfileUrl,
+                        comment_text: c.text || null,
+                        comment_date: c.date || null,
+                        likes: c.likes || 0,
+                        depth: c.depth || 1,
+                        is_reply: c.is_reply || false
+                    });
+                }
+
+                // Batch insert comments (max 100 at a time)
+                for (let j = 0; j < commentRows.length; j += 100) {
+                    const batch = commentRows.slice(j, j + 100);
+                    const { error: cErr } = await sb.from('post_comments').insert(batch);
+                    if (cErr) console.warn('Comment batch error:', cErr.message);
+                    else totalComments += batch.length;
+                }
+
+                // Create timeline entries for each unique commenter
+                const seenCommenters = new Set();
+                for (const c of comments) {
+                    const cUsername = c.author?.username || null;
+                    if (!cUsername || seenCommenters.has(cUsername)) continue;
+                    seenCommenters.add(cUsername);
+                    const cMember = memberMap.get(cUsername);
+                    if (!cMember) continue;
+
+                    // Count this member's comments on this post
+                    const memberCommentCount = comments.filter(x => x.author?.username === cUsername).length;
+                    const timelineContent = `💬 Hat ${memberCommentCount}x kommentiert in: "${post.title || 'Post'}"`;
+
+                    await sb.from('timeline_entries').insert({
+                        member_id: cMember.id,
+                        entry_type: 'system',
+                        content: timelineContent,
+                        channel: 'skool'
+                    }).then(() => {}).catch(() => {});
+                }
+            }
+        }
+
+        progressFill.style.width = '100%';
+        progressText.textContent = 'Fertig!';
+        resultEl.className = 'import-result success';
+        resultEl.textContent = `✅ ${totalPosts} Posts, ${totalComments} Kommentare importiert. ${totalNewMembers} neue Mitglieder angelegt.`;
+        toast(`Import: ${totalPosts} Posts, ${totalComments} Kommentare`, 'success');
+
+    } catch (err) {
+        resultEl.className = 'import-result error';
+        resultEl.textContent = '❌ ' + err.message;
+        toast(err.message, 'error');
     }
 }
 
@@ -1301,6 +1455,18 @@ document.addEventListener('DOMContentLoaded', () => {
     $('import-posts-file').addEventListener('change', () => importFile('posts'));
     $('btn-import-demo').addEventListener('click', loadDemoData);
     $('btn-export-data').addEventListener('click', exportData);
+
+    // Skool JSON paste
+    $('btn-import-json-paste').addEventListener('click', () => {
+        const jsonText = $('import-json-paste').value.trim();
+        if (!jsonText) { toast('Bitte JSON einfügen', 'error'); return; }
+        importSkoolJSON(jsonText);
+    });
+    $('btn-clear-json-paste').addEventListener('click', () => {
+        $('import-json-paste').value = '';
+        $('import-json-result').textContent = '';
+        $('import-json-progress').classList.add('hidden');
+    });
 
     // Demo data from empty state
     $('btn-load-demo').addEventListener('click', async () => {
