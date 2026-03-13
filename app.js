@@ -7,8 +7,6 @@
 const SUPABASE_URL = 'https://fygynutbtlyuccfkrkzn.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5Z3ludXRidGx5dWNjZmtya3puIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg4NTg5MzQsImV4cCI6MjA4NDQzNDkzNH0.Fj03XD8YEPGK6_Wp6wmOxy6pIUr6oBbm2D1o9egZCqU';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-// Data client — alle Daten-Tabellen liegen im 'crm' Schema
-const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { db: { schema: 'crm' } });
 
 // ─── State ───────────────────────────────
 let currentUser = null;   // { id, username, display_name, email, role, ... }
@@ -146,7 +144,7 @@ async function checkAuth() {
     const { data: { session } } = await sb.auth.getSession();
     if (!session) { showLogin(); return; }
     try {
-        const { data, error } = await db.from('crm_users').select('*').eq('auth_user_id', session.user.id).single();
+        const { data, error } = await sb.from('crm_users').select('*').eq('auth_user_id', session.user.id).single();
         if (error || !data) { showLogin(); return; }
         currentUser = data;
         showApp();
@@ -180,7 +178,7 @@ function updateSidebarUser() {
 
 async function loadUsers() {
     try {
-        const { data, error } = await db.from('crm_users').select('*').eq('is_active', true).order('display_name');
+        const { data, error } = await sb.from('crm_users').select('*').eq('is_active', true).order('display_name');
         if (error) throw error;
         allUsers = data || [];
     } catch { allUsers = []; }
@@ -195,7 +193,7 @@ function startPolling() {
 async function pollUnread() {
     if (!currentUser) return;
     try {
-        const { count, error } = await db.from('team_messages').select('*', { count: 'exact', head: true }).eq('to_user_id', currentUser.id).eq('is_read', false);
+        const { count, error } = await sb.from('team_messages').select('*', { count: 'exact', head: true }).eq('to_user_id', currentUser.id).eq('is_read', false);
         if (error) throw error;
         unreadCount = count || 0;
         const badge = $('team-badge');
@@ -245,7 +243,7 @@ function showPage(name) {
 // ─── Dashboard ───────────────────────────
 async function loadDashboard() {
     try {
-        const { data: members, error } = await db.from('members').select('*');
+        const { data: members, error } = await sb.from('members').select('*');
         if (error) throw error;
         const all = members || [];
         const paying = all.filter(m => m.membership_type && m.membership_type !== 'free');
@@ -305,7 +303,7 @@ function mapObj(obj, fn) {
 async function loadMyTasks() {
     const tasksEl = $('my-tasks');
     try {
-        const { data, error } = await db.from('members').select('id, name, activity_status, membership_type, funnel_stage').eq('assigned_to', currentUser.id).in('activity_status', ['at_risk', 'inactive']).order('name').limit(8);
+        const { data, error } = await sb.from('members').select('id, name, activity_status, membership_type, funnel_stage').eq('assigned_to', currentUser.id).in('activity_status', ['at_risk', 'inactive']).order('name').limit(8);
         if (error) throw error;
         if (!data || data.length === 0) {
             tasksEl.innerHTML = '<p class="text-muted" style="padding:12px;font-size:0.85rem">Keine offenen Aufgaben</p>';
@@ -327,7 +325,7 @@ async function loadMyTasks() {
 async function loadActivityFeed() {
     const feedEl = $('activity-feed');
     try {
-        const { data: entries, error } = await db.from('timeline_entries').select('*, member:members(name)').order('created_at', { ascending: false }).limit(10);
+        const { data: entries, error } = await sb.from('timeline_entries').select('*, member:members(name)').order('created_at', { ascending: false }).limit(10);
         if (error) throw error;
         if (!entries || entries.length === 0) {
             feedEl.innerHTML = '<p class="text-muted" style="padding:12px;font-size:0.85rem">Keine Aktivitäten</p>';
@@ -382,7 +380,7 @@ async function loadMembers() {
         const membership = $('filter-membership').value;
         const level = $('filter-level').value;
 
-        let query = db.from('members').select('*');
+        let query = sb.from('members').select('*');
         if (search) query = query.or(`name.ilike.%${search}%,skool_username.ilike.%${search}%`);
         if (status) query = query.eq('activity_status', status);
         if (membership) query = query.eq('membership_type', membership);
@@ -439,13 +437,13 @@ async function loadMemberDetail(id) {
     if (!id) return;
     currentMemberId = parseInt(id);
     try {
-        const { data: member, error } = await db.from('members').select('*').eq('id', id).single();
+        const { data: member, error } = await sb.from('members').select('*').eq('id', id).single();
         if (error) throw error;
         // Load posts separately
-        const { data: posts } = await db.from('posts').select('*').eq('member_id', id).order('posted_at', { ascending: false });
+        const { data: posts } = await sb.from('posts').select('*').eq('member_id', id).order('posted_at', { ascending: false });
         member.posts = posts || [];
         // Load labels
-        const { data: labels } = await db.from('member_labels').select('label').eq('member_id', id);
+        const { data: labels } = await sb.from('member_labels').select('label').eq('member_id', id);
         member.custom_labels = (labels || []).map(l => l.label);
         renderMemberDetail(member);
         loadTimeline(id);
@@ -522,7 +520,7 @@ async function updateMemberField(memberId, field, value) {
     try {
         const updates = {};
         updates[field] = value || null;
-        const { error } = await db.from('members').update(updates).eq('id', memberId);
+        const { error } = await sb.from('members').update(updates).eq('id', memberId);
         if (error) throw error;
         toast('Aktualisiert', 'success');
     } catch (err) {
@@ -554,7 +552,7 @@ function renderPosts(posts) {
 async function loadTimeline(memberId) {
     const feed = $('timeline-feed');
     try {
-        const { data: entries, error } = await db.from('timeline_entries').select('*').eq('member_id', memberId).order('created_at', { ascending: true });
+        const { data: entries, error } = await sb.from('timeline_entries').select('*').eq('member_id', memberId).order('created_at', { ascending: true });
         if (error) throw error;
         if (!entries || entries.length === 0) {
             feed.innerHTML = '<div class="empty-state"><p>Noch keine Einträge im Verlauf</p></div>';
@@ -622,7 +620,7 @@ async function addTimelineEntry() {
             user_id: currentUser.id,
             user_name: currentUser.display_name
         };
-        const { error } = await db.from('timeline_entries').insert(row);
+        const { error } = await sb.from('timeline_entries').insert(row);
         if (error) throw error;
         $('timeline-content').value = '';
         audioFileData = null;
@@ -651,7 +649,7 @@ async function loadKanban() {
             };
         });
 
-        let query = db.from('members').select('*').not('funnel_stage', 'is', null);
+        let query = sb.from('members').select('*').not('funnel_stage', 'is', null);
         if (kanbanFilterUser) query = query.eq('assigned_to', kanbanFilterUser);
         const { data: members, error } = await query;
         if (error) throw error;
@@ -733,7 +731,7 @@ function setupDragAndDrop() {
             const newStage = col.dataset.stage;
             if (!memberId || !newStage) return;
             try {
-                await db.from('members').update({ funnel_stage: newStage }).eq('id', memberId);
+                await sb.from('members').update({ funnel_stage: newStage }).eq('id', memberId);
                 toast('Mitglied verschoben', 'success');
                 loadKanban();
             } catch (err) {
@@ -756,7 +754,7 @@ async function loadTeamPage() {
         // Member context
         if (allMembers.length === 0) {
             try {
-                const { data } = await db.from('members').select('id, name').order('name');
+                const { data } = await sb.from('members').select('id, name').order('name');
                 allMembers = data || [];
             } catch { allMembers = []; }
         }
@@ -818,7 +816,7 @@ async function sendTeamMessage() {
     }
 
     try {
-        const { error } = await db.from('team_messages').insert({
+        const { error } = await sb.from('team_messages').insert({
             from_user_id: currentUser.id,
             to_user_id: parseInt(toId),
             content,
@@ -836,7 +834,7 @@ async function sendTeamMessage() {
 
 async function markTeamRead(msgId) {
     try {
-        const { error } = await db.from('team_messages').update({ is_read: true }).eq('id', msgId);
+        const { error } = await sb.from('team_messages').update({ is_read: true }).eq('id', msgId);
         if (error) throw error;
         loadTeamMessages();
         pollUnread();
@@ -886,7 +884,7 @@ async function createUser() {
         const { data: authData, error: authErr } = await sb.auth.signUp({ email, password });
         if (authErr) throw authErr;
         // Create crm_users entry linked to auth.users
-        const { error: crmErr } = await db.from('crm_users').insert({
+        const { error: crmErr } = await sb.from('crm_users').insert({
             username, display_name: display, email, role,
             auth_user_id: authData.user?.id,
             is_active: true,
@@ -991,7 +989,7 @@ async function saveMember() {
     if (!name) { toast('Name ist erforderlich', 'error'); return; }
 
     try {
-        await db.from('members').insert({
+        await sb.from('members').insert({
             name,
             skool_username: $('modal-username').value.trim() || null,
             bio: $('modal-bio').value.trim() || null,
@@ -1095,7 +1093,7 @@ async function updateMember() {
             assigned_to: $('modal-edit-assigned').value || null,
             notes: $('modal-edit-notes').value || null
         };
-        const { error } = await db.from('members').update(updates).eq('id', currentMemberId);
+        const { error } = await sb.from('members').update(updates).eq('id', currentMemberId);
         if (error) throw error;
         closeModal();
         toast('Mitglied aktualisiert', 'success');
@@ -1109,7 +1107,7 @@ async function deleteMember() {
     if (!currentMemberId) return;
     if (!confirm('Mitglied wirklich löschen? Alle Daten werden entfernt.')) return;
     try {
-        const { error } = await db.from('members').delete().eq('id', currentMemberId);
+        const { error } = await sb.from('members').delete().eq('id', currentMemberId);
         if (error) throw error;
         toast('Mitglied gelöscht', 'success');
         location.hash = 'members';
@@ -1129,7 +1127,7 @@ async function importFile(type) {
         const text = await file.text();
         const data = JSON.parse(text);
         const table = type === 'members' ? 'members' : 'posts';
-        const { error } = await db.from(table).insert(Array.isArray(data) ? data : [data]);
+        const { error } = await sb.from(table).insert(Array.isArray(data) ? data : [data]);
         if (error) throw error;
         resultEl.className = 'import-result success';
         resultEl.textContent = `Daten erfolgreich importiert`;
@@ -1153,9 +1151,9 @@ async function loadDemoData() {
 
 async function exportData() {
     try {
-        const { data: members } = await db.from('members').select('*');
-        const { data: posts } = await db.from('posts').select('*');
-        const { data: timeline } = await db.from('timeline_entries').select('*');
+        const { data: members } = await sb.from('members').select('*');
+        const { data: posts } = await sb.from('posts').select('*');
+        const { data: timeline } = await sb.from('timeline_entries').select('*');
         const exportObj = { members: members || [], posts: posts || [], timeline_entries: timeline || [] };
         const blob = new Blob([JSON.stringify(exportObj, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -1210,7 +1208,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const { data, error } = await sb.auth.signInWithPassword({ email, password });
             if (error) throw error;
             // Load CRM user profile
-            const { data: crmUser, error: crmErr } = await db.from('crm_users').select('*').eq('auth_user_id', data.user.id).single();
+            const { data: crmUser, error: crmErr } = await sb.from('crm_users').select('*').eq('auth_user_id', data.user.id).single();
             if (crmErr || !crmUser) throw new Error('Zugangsdaten ungültig');
             if (!crmUser.is_active) {
                 await sb.auth.signOut();
