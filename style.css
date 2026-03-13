@@ -1602,3 +1602,16 @@ a:hover { text-decoration: underline; }
 .import-progress-bar { height: 6px; background: var(--bg-secondary, #1a1f2e); border-radius: 3px; overflow: hidden; }
 .import-progress-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #10b981); border-radius: 3px; width: 0%; transition: width 0.3s; }
 .import-progress-text { font-size: 12px; color: var(--text-muted, #94a3b8); margin-top: 4px; display: block; }
+
+/* ─── Community Toggle ─── */
+.import-community-toggle { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.toggle-label { font-size: 13px; color: var(--text-muted, #94a3b8); font-weight: 500; }
+.btn-community { padding: 6px 16px; border-radius: 6px; border: 2px solid transparent; cursor: pointer; font-weight: 600; font-size: 13px; opacity: 0.5; transition: all 0.2s; }
+.btn-community.active { opacity: 1; border-color: #fff; transform: scale(1.05); box-shadow: 0 0 12px rgba(255,255,255,0.15); }
+.btn-community:hover { opacity: 0.85; }
+.import-log { max-height: 200px; overflow-y: auto; background: var(--bg-secondary, #131620); border: 1px solid var(--border-light, #2a2f3a); border-radius: 8px; padding: 10px; margin-top: 10px; font-size: 12px; font-family: monospace; color: var(--text-muted, #94a3b8); }
+.import-log .log-line { padding: 2px 0; }
+.import-log .log-ok { color: #10b981; }
+.import-log .log-warn { color: #f59e0b; }
+.import-log .log-err { color: #ef4444; }
+.import-log .log-info { color: #3b82f6; }

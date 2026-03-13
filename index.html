@@ -448,8 +448,13 @@
                 </div>
                 <div class="import-card import-card-wide">
                     <h3>📋 Skool JSON einfügen</h3>
-                    <p class="text-muted">Skool-Scraper JSON hier direkt einfügen — Posts, Kommentare und Mitglieder werden automatisch importiert und verknüpft.</p>
-                    <textarea id="import-json-paste" class="import-json-textarea" rows="10" placeholder='[{"url":"...","title":"...","author":{...},"comments":[...]}]'></textarea>
+                    <p class="text-muted">Skool-Scraper JSON einfügen — Posts, Kommentare und Mitglieder werden automatisch importiert und verknüpft.</p>
+                    <div class="import-community-toggle">
+                        <span class="toggle-label">Community wählen:</span>
+                        <button class="btn btn-community active" id="btn-community-free" data-community="free" style="background:#f59e0b;color:#000">🟡 Free Community</button>
+                        <button class="btn btn-community" id="btn-community-paid" data-community="paid" style="background:#3b82f6;color:#fff">🔵 Bezahlte Community</button>
+                    </div>
+                    <textarea id="import-json-paste" class="import-json-textarea" rows="10" placeholder='Skool JSON hier einfügen...'></textarea>
                     <div class="import-paste-actions">
                         <button class="btn btn-primary" id="btn-import-json-paste">📋 JSON Importieren</button>
                         <button class="btn btn-secondary" id="btn-clear-json-paste">Leeren</button>
@@ -458,6 +463,7 @@
                         <div class="import-progress-bar"><div class="import-progress-fill" id="import-progress-fill"></div></div>
                         <span id="import-progress-text" class="import-progress-text"></span>
                     </div>
+                    <div id="import-json-log" class="import-log hidden"></div>
                     <div id="import-json-result" class="import-result"></div>
                 </div>
                 <div class="import-card">

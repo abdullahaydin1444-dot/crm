@@ -1144,65 +1144,112 @@ async function importFile(type) {
 }
 
 // ─── Skool JSON Import Pipeline ──────────
+let selectedCommunity = 'free'; // 'free' or 'paid'
+
 async function importSkoolJSON(jsonText) {
     const resultEl = $('import-json-result');
     const progressEl = $('import-json-progress');
     const progressFill = $('import-progress-fill');
     const progressText = $('import-progress-text');
+    const logEl = $('import-json-log');
+
+    // Helper: log line
+    function log(msg, cls) {
+        if (!logEl) return;
+        logEl.classList.remove('hidden');
+        const line = document.createElement('div');
+        line.className = 'log-line ' + (cls || '');
+        line.textContent = msg;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+    }
 
     try {
-        // Parse
-        let posts;
-        try {
-            posts = JSON.parse(jsonText);
-        } catch { throw new Error('Ungültiges JSON — bitte überprüfe das Format.'); }
-        if (!Array.isArray(posts)) posts = [posts];
-        if (posts.length === 0) throw new Error('Leeres Array — keine Posts gefunden.');
-
+        // Reset UI
+        if (logEl) { logEl.innerHTML = ''; logEl.classList.remove('hidden'); }
         progressEl.classList.remove('hidden');
+        progressFill.style.width = '0%';
+        progressText.textContent = 'Starte Import...';
         resultEl.className = 'import-result';
         resultEl.textContent = '';
 
-        // Load existing members for matching
+        // Parse JSON
+        let posts;
+        try {
+            posts = JSON.parse(jsonText);
+        } catch (e) {
+            throw new Error('Ungueltiges JSON: ' + e.message);
+        }
+        if (!Array.isArray(posts)) posts = [posts];
+        if (posts.length === 0) throw new Error('Leeres Array — keine Posts gefunden.');
+
+        const communityType = selectedCommunity;
+        const membershipType = communityType === 'paid' ? 'monthly_97' : 'free';
+        log('Community: ' + (communityType === 'paid' ? '🔵 Bezahlt' : '🟡 Free'), 'log-info');
+        log(posts.length + ' Posts gefunden, starte Verarbeitung...', 'log-info');
+
+        const startTime = Date.now();
+
+        // Load existing members + posts for duplicate check
         const { data: existingMembers } = await sb.from('members').select('id, name, skool_username');
         const memberMap = new Map();
-        (existingMembers || []).forEach(m => {
+        (existingMembers || []).forEach(function(m) {
             if (m.skool_username) memberMap.set(m.skool_username, m);
         });
 
-        let totalPosts = 0, totalComments = 0, totalNewMembers = 0;
-        const totalSteps = posts.length;
+        const { data: existingPosts } = await sb.from('posts').select('post_url');
+        const existingUrls = new Set((existingPosts || []).map(function(p) { return p.post_url; }).filter(Boolean));
+        log(memberMap.size + ' bestehende Mitglieder geladen', 'log-info');
+        log(existingUrls.size + ' bestehende Post-URLs fuer Duplikat-Check', 'log-info');
 
-        // Helper: find or create member by skool username
+        var totalPosts = 0, totalComments = 0, totalNewMembers = 0, totalSkipped = 0;
+        var totalSteps = posts.length;
+
+        // Helper: find or create member
         async function findOrCreateMember(authorName, authorUsername) {
             if (!authorUsername) return null;
             if (memberMap.has(authorUsername)) return memberMap.get(authorUsername);
-
-            // Create new member
-            const { data: newMember, error } = await sb.from('members')
-                .insert({ name: authorName || authorUsername, skool_username: authorUsername })
-                .select('id, name, skool_username')
-                .single();
-            if (error) { console.warn('Member create error:', error.message); return null; }
-            memberMap.set(authorUsername, newMember);
+            var memberData = {
+                name: authorName || authorUsername,
+                skool_username: authorUsername,
+                membership_type: membershipType,
+                membership_status: 'active',
+                activity_status: 'active'
+            };
+            var result = await sb.from('members').insert(memberData).select('id, name, skool_username').single();
+            if (result.error) {
+                log('Member-Fehler (' + authorUsername + '): ' + result.error.message, 'log-warn');
+                return null;
+            }
+            memberMap.set(authorUsername, result.data);
             totalNewMembers++;
-            return newMember;
+            return result.data;
         }
 
-        for (let i = 0; i < posts.length; i++) {
-            const post = posts[i];
-            const pct = Math.round(((i + 1) / totalSteps) * 100);
+        for (var i = 0; i < posts.length; i++) {
+            var post = posts[i];
+            var pct = Math.round(((i + 1) / totalSteps) * 100);
             progressFill.style.width = pct + '%';
-            progressText.textContent = `Post ${i + 1} von ${totalSteps}...`;
+            var elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
+            var perPost = (Date.now() - startTime) / (i + 1);
+            var remaining = Math.round((perPost * (totalSteps - i - 1)) / 1000);
+            progressText.textContent = 'Post ' + (i + 1) + '/' + totalSteps + ' (' + pct + '%) — ~' + remaining + 's verbleibend';
+
+            // Duplicate check by URL
+            if (post.url && existingUrls.has(post.url)) {
+                log('⏩ Duplikat uebersprungen: ' + (post.title || post.url).substring(0, 60), 'log-warn');
+                totalSkipped++;
+                continue;
+            }
 
             // Find/create post author
-            const authorUsername = post.author?.username || null;
-            const authorName = post.author?.name || 'Unbekannt';
-            const authorProfileUrl = post.author?.profile_url || null;
-            const member = await findOrCreateMember(authorName, authorUsername);
+            var authorUsername = (post.author && post.author.username) || null;
+            var authorName = (post.author && post.author.name) || 'Unbekannt';
+            var authorProfileUrl = (post.author && post.author.profile_url) || null;
+            var member = await findOrCreateMember(authorName, authorUsername);
 
             // Insert post
-            const postRow = {
+            var postRow = {
                 member_id: member ? member.id : null,
                 post_title: post.title || null,
                 post_content: post.content || null,
@@ -1213,29 +1260,30 @@ async function importSkoolJSON(jsonText) {
                 author_username: authorUsername,
                 author_profile_url: authorProfileUrl,
                 category: post.category || null,
-                scraped_at: post.scraped_at || null,
-                posted_at: null // Skool dates are relative, can't parse reliably
+                scraped_at: post.scraped_at || null
             };
 
-            const { data: insertedPost, error: postErr } = await sb.from('posts')
-                .insert(postRow)
-                .select('id')
-                .single();
-            if (postErr) { console.warn('Post insert error:', postErr.message); continue; }
+            var postResult = await sb.from('posts').insert(postRow).select('id').single();
+            if (postResult.error) {
+                log('Post-Fehler: ' + postResult.error.message, 'log-err');
+                continue;
+            }
             totalPosts++;
+            if (post.url) existingUrls.add(post.url);
+            log('✅ Post: ' + (post.title || 'Ohne Titel').substring(0, 50), 'log-ok');
 
             // Insert comments
-            const comments = post.comments || [];
+            var comments = post.comments || [];
             if (comments.length > 0) {
-                const commentRows = [];
-                for (const c of comments) {
-                    const cUsername = c.author?.username || null;
-                    const cName = c.author?.name || 'Unbekannt';
-                    const cProfileUrl = c.author?.profile_url || null;
-                    const cMember = await findOrCreateMember(cName, cUsername);
-
+                var commentRows = [];
+                for (var ci = 0; ci < comments.length; ci++) {
+                    var c = comments[ci];
+                    var cUsername = (c.author && c.author.username) || null;
+                    var cName = (c.author && c.author.name) || 'Unbekannt';
+                    var cProfileUrl = (c.author && c.author.profile_url) || null;
+                    var cMember = await findOrCreateMember(cName, cUsername);
                     commentRows.push({
-                        post_id: insertedPost.id,
+                        post_id: postResult.data.id,
                         member_id: cMember ? cMember.id : null,
                         author_name: cName,
                         author_username: cUsername,
@@ -1248,46 +1296,51 @@ async function importSkoolJSON(jsonText) {
                     });
                 }
 
-                // Batch insert comments (max 100 at a time)
-                for (let j = 0; j < commentRows.length; j += 100) {
-                    const batch = commentRows.slice(j, j + 100);
-                    const { error: cErr } = await sb.from('post_comments').insert(batch);
-                    if (cErr) console.warn('Comment batch error:', cErr.message);
-                    else totalComments += batch.length;
+                // Batch insert comments
+                for (var j = 0; j < commentRows.length; j += 50) {
+                    var batch = commentRows.slice(j, j + 50);
+                    var batchResult = await sb.from('post_comments').insert(batch);
+                    if (batchResult.error) {
+                        log('Kommentar-Fehler: ' + batchResult.error.message, 'log-err');
+                    } else {
+                        totalComments += batch.length;
+                    }
                 }
+                log('   → ' + comments.length + ' Kommentare importiert', 'log-ok');
 
-                // Create timeline entries for each unique commenter
-                const seenCommenters = new Set();
-                for (const c of comments) {
-                    const cUsername = c.author?.username || null;
-                    if (!cUsername || seenCommenters.has(cUsername)) continue;
-                    seenCommenters.add(cUsername);
-                    const cMember = memberMap.get(cUsername);
-                    if (!cMember) continue;
-
-                    // Count this member's comments on this post
-                    const memberCommentCount = comments.filter(x => x.author?.username === cUsername).length;
-                    const timelineContent = `💬 Hat ${memberCommentCount}x kommentiert in: "${post.title || 'Post'}"`;
-
+                // Timeline entries per unique commenter
+                var seenCommenters = {};
+                for (var ti = 0; ti < comments.length; ti++) {
+                    var tc = comments[ti];
+                    var tcUser = (tc.author && tc.author.username) || null;
+                    if (!tcUser || seenCommenters[tcUser]) continue;
+                    seenCommenters[tcUser] = true;
+                    var tcMember = memberMap.get(tcUser);
+                    if (!tcMember) continue;
+                    var commentCount = comments.filter(function(x) { return x.author && x.author.username === tcUser; }).length;
                     await sb.from('timeline_entries').insert({
-                        member_id: cMember.id,
+                        member_id: tcMember.id,
                         entry_type: 'system',
-                        content: timelineContent,
+                        content: 'Hat ' + commentCount + 'x kommentiert in: "' + (post.title || 'Post') + '"',
                         channel: 'skool'
-                    }).then(() => {}).catch(() => {});
+                    });
                 }
             }
         }
 
+        var totalElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
         progressFill.style.width = '100%';
-        progressText.textContent = 'Fertig!';
+        progressText.textContent = 'Fertig! (' + totalElapsed + 's)';
+        var summary = totalPosts + ' Posts, ' + totalComments + ' Kommentare importiert. ' + totalNewMembers + ' neue Mitglieder. ' + totalSkipped + ' Duplikate uebersprungen.';
         resultEl.className = 'import-result success';
-        resultEl.textContent = `✅ ${totalPosts} Posts, ${totalComments} Kommentare importiert. ${totalNewMembers} neue Mitglieder angelegt.`;
-        toast(`Import: ${totalPosts} Posts, ${totalComments} Kommentare`, 'success');
+        resultEl.textContent = summary;
+        log('=== FERTIG: ' + summary + ' ===', 'log-ok');
+        toast('Import: ' + totalPosts + ' Posts, ' + totalComments + ' Kommentare', 'success');
 
     } catch (err) {
         resultEl.className = 'import-result error';
-        resultEl.textContent = '❌ ' + err.message;
+        resultEl.textContent = 'FEHLER: ' + err.message;
+        log('FEHLER: ' + err.message, 'log-err');
         toast(err.message, 'error');
     }
 }
@@ -1456,16 +1509,35 @@ document.addEventListener('DOMContentLoaded', () => {
     $('btn-import-demo').addEventListener('click', loadDemoData);
     $('btn-export-data').addEventListener('click', exportData);
 
-    // Skool JSON paste
-    $('btn-import-json-paste').addEventListener('click', () => {
-        const jsonText = $('import-json-paste').value.trim();
-        if (!jsonText) { toast('Bitte JSON einfügen', 'error'); return; }
-        importSkoolJSON(jsonText);
+    // Skool JSON paste + community toggle
+    $('btn-community-free').addEventListener('click', function() {
+        selectedCommunity = 'free';
+        $('btn-community-free').classList.add('active');
+        $('btn-community-paid').classList.remove('active');
     });
-    $('btn-clear-json-paste').addEventListener('click', () => {
+    $('btn-community-paid').addEventListener('click', function() {
+        selectedCommunity = 'paid';
+        $('btn-community-paid').classList.add('active');
+        $('btn-community-free').classList.remove('active');
+    });
+    $('btn-import-json-paste').addEventListener('click', function() {
+        var jsonText = $('import-json-paste').value.trim();
+        if (!jsonText) { toast('Bitte JSON einfuegen', 'error'); return; }
+        var btn = $('btn-import-json-paste');
+        btn.disabled = true;
+        btn.textContent = '⏳ Importiere...';
+        importSkoolJSON(jsonText).finally(function() {
+            btn.disabled = false;
+            btn.textContent = '📋 JSON Importieren';
+        });
+    });
+    $('btn-clear-json-paste').addEventListener('click', function() {
         $('import-json-paste').value = '';
         $('import-json-result').textContent = '';
+        $('import-json-result').className = 'import-result';
         $('import-json-progress').classList.add('hidden');
+        var logEl = $('import-json-log');
+        if (logEl) { logEl.innerHTML = ''; logEl.classList.add('hidden'); }
     });
 
     // Demo data from empty state
