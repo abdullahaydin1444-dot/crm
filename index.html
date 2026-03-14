@@ -295,12 +295,16 @@
                 <div class="member-activity-panel">
                     <div class="panel-tabs">
                         <button class="panel-tab active" data-tab="timeline">Verlauf</button>
+                        <button class="panel-tab" data-tab="vita">Vita</button>
                         <button class="panel-tab" data-tab="posts">Beiträge</button>
                         <button class="panel-tab" data-tab="notes">Notizen</button>
                     </div>
 
                     <!-- Timeline Tab -->
                     <div class="panel-content active" id="tab-timeline">
+                        <div class="timeline-actions">
+                            <button class="btn btn-secondary btn-sm" id="btn-export-ai" title="AI-optimierten JSON Export erstellen">🤖 AI Export</button>
+                        </div>
                         <div class="timeline-feed" id="timeline-feed"></div>
                         <div class="timeline-input">
                             <div class="timeline-input-header">
@@ -330,6 +334,13 @@
                                     <button class="btn btn-primary btn-sm" id="btn-add-timeline">Speichern</button>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+
+                    <!-- Vita Tab -->
+                    <div class="panel-content" id="tab-vita">
+                        <div id="vita-content" class="vita-container">
+                            <div class="empty-state"><p>Vita wird geladen...</p></div>
                         </div>
                     </div>
 

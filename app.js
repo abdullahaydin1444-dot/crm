@@ -560,7 +560,7 @@ async function loadTimeline(memberId) {
         var comments = [];
         try {
             var cResult = await sb.from('post_comments')
-                .select('id, comment_text, comment_date, likes, depth, is_reply, created_at, author_name, post_id, posts(post_title, author_name, author_username, post_url, category, posted_at)')
+                .select('id, comment_text, comment_date, likes, depth, is_reply, created_at, author_name, post_id, posts(post_title, post_content, author_name, author_username, post_url, category, posted_at)')
                 .eq('member_id', memberId)
                 .order('created_at', { ascending: true });
             if (cResult.data) comments = cResult.data;
@@ -657,8 +657,9 @@ function renderCommentEntry(c) {
         '</div>' +
         '<div class="timeline-comment-post">' +
         '<strong>Post:</strong> ' + escapeHtml(postTitle) + categoryHtml +
-        '<br><strong>Von:</strong> ' + escapeHtml(postAuthor) +
+        '<br><strong>Von:</strong> ' + authorHtml +
         (commentDate ? ' <span style="color:var(--text-muted);font-size:12px">(' + escapeHtml(commentDate) + ')</span>' : '') +
+        (post.post_content ? '<div class="timeline-post-content">' + escapeHtml(post.post_content.substring(0, 200)) + (post.post_content.length > 200 ? '...' : '') + '</div>' : '') +
         '</div>' +
         '<div class="timeline-comment-text">' +
         (isReply ? '<span style="color:var(--text-muted);font-size:12px">↩️ Antwort:</span> ' : '') +
@@ -700,6 +701,238 @@ async function addTimelineEntry() {
         toast('Eintrag gespeichert', 'success');
     } catch (err) {
         toast(err.message, 'error');
+    }
+}
+
+// ─── AI Export ───────────────────────────
+async function exportAIProfile(memberId) {
+    try {
+        toast('AI-Profil wird erstellt...', 'info');
+
+        // Load member
+        var mRes = await sb.from('members').select('*').eq('id', memberId).single();
+        if (mRes.error) throw mRes.error;
+        var member = mRes.data;
+
+        // Load posts by this member
+        var pRes = await sb.from('posts').select('*').eq('member_id', memberId).order('created_at', { ascending: false });
+        var memberPosts = pRes.data || [];
+
+        // Load comments by this member with post details
+        var cRes = await sb.from('post_comments')
+            .select('*, posts(post_title, post_content, author_name, author_username, post_url, category)')
+            .eq('member_id', memberId)
+            .order('created_at', { ascending: true });
+        var memberComments = cRes.data || [];
+
+        // Load timeline entries
+        var tRes = await sb.from('timeline_entries').select('*').eq('member_id', memberId).order('created_at', { ascending: true });
+        var timelineEntries = (tRes.data || []).filter(function(e) {
+            return !(e.entry_type === 'system' && e.content && e.content.indexOf('kommentiert in:') !== -1);
+        });
+
+        // Analyze interests
+        var categories = {};
+        memberComments.forEach(function(c) {
+            var cat = (c.posts && c.posts.category) || 'Unkategorisiert';
+            categories[cat] = (categories[cat] || 0) + 1;
+        });
+        memberPosts.forEach(function(p) {
+            var cat = p.category || 'Unkategorisiert';
+            categories[cat] = (categories[cat] || 0) + 2;
+        });
+        var sortedCategories = Object.keys(categories).sort(function(a, b) { return categories[b] - categories[a]; });
+
+        // Build AI-optimized JSON
+        var aiProfile = {
+            _hinweis: 'Dieses JSON beschreibt ein Community-Mitglied und seine Aktivitaeten. Nutze diese Daten, um die Person zu verstehen und personalisierte Kommunikation zu erstellen.',
+            person: {
+                name: member.name,
+                username: member.skool_username || null,
+                mitgliedschaft: member.membership_type === 'free' ? 'Kostenlose Community' : 'Bezahlte Community (97 Euro/Monat)',
+                status: member.activity_status,
+                level: member.progress_level,
+                stadt: member.city || null,
+                land: member.country || null,
+                bio: member.bio || null,
+                beitritt: member.join_date || null
+            },
+            vita: {
+                anzahl_eigene_posts: memberPosts.length,
+                anzahl_kommentare: memberComments.length,
+                hauptinteressen: sortedCategories.slice(0, 5),
+                engagement_level: memberComments.length > 20 ? 'Sehr aktiv' : memberComments.length > 5 ? 'Aktiv' : memberComments.length > 0 ? 'Gelegentlich' : 'Passiv',
+                letzte_aktivitaet: member.last_active || null
+            },
+            eigene_posts: memberPosts.map(function(p) {
+                return {
+                    titel: p.post_title,
+                    inhalt: p.post_content,
+                    kategorie: p.category,
+                    likes: p.likes || 0,
+                    kommentare: p.comments || 0,
+                    url: p.post_url
+                };
+            }),
+            kommentare_auf_posts_anderer: memberComments.map(function(c) {
+                var post = c.posts || {};
+                return {
+                    post_titel: post.post_title || 'Unbekannt',
+                    post_autor: post.author_name || 'Unbekannt',
+                    post_inhalt_auszug: (post.post_content || '').substring(0, 300) + ((post.post_content || '').length > 300 ? '...' : ''),
+                    post_kategorie: post.category || null,
+                    post_url: post.post_url || null,
+                    kommentar_text: c.comment_text,
+                    datum: c.comment_date || null,
+                    ist_antwort: c.is_reply || false,
+                    likes: c.likes || 0
+                };
+            }),
+            notizen_und_verlauf: timelineEntries.filter(function(e) { return e.entry_type !== 'system'; }).map(function(e) {
+                return {
+                    typ: e.entry_type,
+                    inhalt: e.content,
+                    kanal: e.channel || null,
+                    datum: e.created_at,
+                    von: e.user_name || 'System'
+                };
+            })
+        };
+
+        // Download as JSON
+        var jsonStr = JSON.stringify(aiProfile, null, 2);
+        var blob = new Blob([jsonStr], { type: 'application/json' });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'ai-profil-' + (member.skool_username || member.name.toLowerCase().replace(/\s+/g, '-')) + '.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        toast('AI-Profil exportiert!', 'success');
+    } catch (err) {
+        toast('Export-Fehler: ' + err.message, 'error');
+    }
+}
+
+// ─── Vita ────────────────────────────────
+async function loadVita(memberId) {
+    var container = $('vita-content');
+    if (!container) return;
+
+    try {
+        container.innerHTML = '<div class="empty-state"><p>Vita wird geladen...</p></div>';
+
+        // Load member
+        var mRes = await sb.from('members').select('*').eq('id', memberId).single();
+        var member = mRes.data;
+
+        // Load posts
+        var pRes = await sb.from('posts').select('*').eq('member_id', memberId);
+        var posts = pRes.data || [];
+
+        // Load comments with post info
+        var cRes = await sb.from('post_comments')
+            .select('*, posts(post_title, category)')
+            .eq('member_id', memberId);
+        var comments = cRes.data || [];
+
+        // Stats
+        var totalPosts = posts.length;
+        var totalComments = comments.length;
+        var totalLikes = 0;
+        posts.forEach(function(p) { totalLikes += (p.likes || 0); });
+        comments.forEach(function(c) { totalLikes += (c.likes || 0); });
+
+        // Categories
+        var categories = {};
+        comments.forEach(function(c) {
+            var cat = (c.posts && c.posts.category) || 'Unkategorisiert';
+            categories[cat] = (categories[cat] || 0) + 1;
+        });
+        posts.forEach(function(p) {
+            var cat = p.category || 'Unkategorisiert';
+            categories[cat] = (categories[cat] || 0) + 2;
+        });
+        var sortedCats = Object.entries(categories).sort(function(a, b) { return b[1] - a[1]; });
+
+        // Engagement level
+        var total = totalPosts + totalComments;
+        var engLevel = 'Passiv';
+        var engColor = '#ef4444';
+        if (total > 20) { engLevel = 'Sehr aktiv'; engColor = '#10b981'; }
+        else if (total > 5) { engLevel = 'Aktiv'; engColor = '#3b82f6'; }
+        else if (total > 0) { engLevel = 'Gelegentlich'; engColor = '#f59e0b'; }
+
+        // Activity type
+        var actType = 'Beobachter';
+        if (totalPosts > 5 && totalComments > 10) actType = 'Community-Leader';
+        else if (totalPosts > 3) actType = 'Content-Creator';
+        else if (totalComments > 10) actType = 'Aktiver Kommentator';
+        else if (totalComments > 0) actType = 'Gelegentlicher Teilnehmer';
+
+        // Build Vita HTML
+        var html = '';
+
+        // Stats Grid
+        html += '<div class="vita-stats-grid">';
+        html += '<div class="vita-stat"><div class="vita-stat-number">' + totalPosts + '</div><div class="vita-stat-label">Eigene Posts</div></div>';
+        html += '<div class="vita-stat"><div class="vita-stat-number">' + totalComments + '</div><div class="vita-stat-label">Kommentare</div></div>';
+        html += '<div class="vita-stat"><div class="vita-stat-number">' + totalLikes + '</div><div class="vita-stat-label">Likes erhalten</div></div>';
+        html += '<div class="vita-stat"><div class="vita-stat-number" style="color:' + engColor + '">' + engLevel + '</div><div class="vita-stat-label">Engagement</div></div>';
+        html += '</div>';
+
+        // Personality card
+        html += '<div class="vita-card">';
+        html += '<h4>Persoenlichkeitsprofil</h4>';
+        html += '<div class="vita-personality">';
+        html += '<div class="vita-trait"><span class="vita-trait-label">Typ:</span><span class="vita-trait-value">' + actType + '</span></div>';
+        html += '<div class="vita-trait"><span class="vita-trait-label">Mitgliedschaft:</span><span class="vita-trait-value">' + (member.membership_type === 'free' ? 'Free Community' : 'Bezahlte Community') + '</span></div>';
+        html += '<div class="vita-trait"><span class="vita-trait-label">Status:</span><span class="vita-trait-value">' + (member.activity_status || 'Unbekannt') + '</span></div>';
+        if (member.city || member.country) {
+            html += '<div class="vita-trait"><span class="vita-trait-label">Standort:</span><span class="vita-trait-value">' + escapeHtml((member.city || '') + (member.city && member.country ? ', ' : '') + (member.country || '')) + '</span></div>';
+        }
+        if (member.bio) {
+            html += '<div class="vita-trait"><span class="vita-trait-label">Bio:</span><span class="vita-trait-value">' + escapeHtml(member.bio) + '</span></div>';
+        }
+        html += '</div></div>';
+
+        // Interests
+        if (sortedCats.length > 0) {
+            html += '<div class="vita-card">';
+            html += '<h4>Interessen & Themen</h4>';
+            html += '<div class="vita-interests">';
+            var maxVal = sortedCats[0] ? sortedCats[0][1] : 1;
+            sortedCats.forEach(function(entry) {
+                var pct = Math.round((entry[1] / maxVal) * 100);
+                html += '<div class="vita-interest">';
+                html += '<span class="vita-interest-name">' + escapeHtml(entry[0]) + '</span>';
+                html += '<div class="vita-interest-bar"><div class="vita-interest-fill" style="width:' + pct + '%"></div></div>';
+                html += '<span class="vita-interest-count">' + entry[1] + '</span>';
+                html += '</div>';
+            });
+            html += '</div></div>';
+        }
+
+        // Recent activity summary
+        html += '<div class="vita-card">';
+        html += '<h4>Zusammenfassung fuer AI</h4>';
+        html += '<p class="vita-summary">' + escapeHtml(member.name) + ' ist ein <strong>' + actType + '</strong> in der ' +
+            (member.membership_type === 'free' ? 'kostenlosen' : 'bezahlten') + ' Community. ' +
+            'Mit ' + totalPosts + ' eigenen Posts und ' + totalComments + ' Kommentaren zeigt ' +
+            (total > 10 ? 'hohes' : total > 3 ? 'moderates' : 'geringes') + ' Engagement. ';
+        if (sortedCats.length > 0) {
+            html += 'Hauptinteressen: ' + sortedCats.slice(0, 3).map(function(e) { return e[0]; }).join(', ') + '.';
+        }
+        html += '</p>';
+        html += '<button class="btn btn-primary btn-sm" onclick="exportAIProfile(' + memberId + ')">🤖 AI-Profil als JSON exportieren</button>';
+        html += '</div>';
+
+        container.innerHTML = html;
+    } catch (err) {
+        container.innerHTML = '<div class="empty-state"><p>Fehler: ' + escapeHtml(err.message) + '</p></div>';
     }
 }
 
@@ -1565,7 +1798,16 @@ document.addEventListener('DOMContentLoaded', () => {
             qsa('.panel-content').forEach(c => c.classList.remove('active'));
             tab.classList.add('active');
             $(`tab-${tab.dataset.tab}`).classList.add('active');
+            if (tab.dataset.tab === 'vita' && currentMemberId) {
+                loadVita(currentMemberId);
+            }
         });
+    });
+
+    // AI Export button
+    $('btn-export-ai').addEventListener('click', function() {
+        if (currentMemberId) exportAIProfile(currentMemberId);
+        else toast('Kein Mitglied ausgewaehlt', 'error');
     });
 
     // Team messages

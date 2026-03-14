@@ -1628,3 +1628,27 @@ a:hover { text-decoration: underline; }
 .author-link-found { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); cursor: pointer; }
 .author-link-found:hover { background: rgba(16,185,129,0.3); transform: scale(1.02); }
 .author-link-missing { background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.25); cursor: default; }
+
+/* ─── Timeline Actions ─── */
+.timeline-actions { display: flex; justify-content: flex-end; padding: 6px 0; }
+.timeline-post-content { margin-top: 6px; padding: 6px 8px; font-size: 12px; color: var(--text-muted, #94a3b8); background: rgba(59,130,246,0.05); border-radius: 4px; line-height: 1.4; white-space: pre-wrap; word-break: break-word; font-style: italic; }
+
+/* ─── Vita Section ─── */
+.vita-container { padding: 12px; }
+.vita-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 16px; }
+.vita-stat { background: var(--bg-secondary, #131620); border: 1px solid var(--border-light, #2a2f3a); border-radius: 10px; padding: 14px 10px; text-align: center; }
+.vita-stat-number { font-size: 22px; font-weight: 700; color: var(--text-primary, #e2e8f0); }
+.vita-stat-label { font-size: 11px; color: var(--text-muted, #94a3b8); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+.vita-card { background: var(--bg-secondary, #131620); border: 1px solid var(--border-light, #2a2f3a); border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+.vita-card h4 { margin: 0 0 12px 0; font-size: 14px; color: var(--text-primary, #e2e8f0); }
+.vita-personality { display: flex; flex-direction: column; gap: 8px; }
+.vita-trait { display: flex; gap: 8px; font-size: 13px; }
+.vita-trait-label { color: var(--text-muted, #94a3b8); min-width: 110px; font-weight: 500; }
+.vita-trait-value { color: var(--text-primary, #e2e8f0); }
+.vita-interests { display: flex; flex-direction: column; gap: 8px; }
+.vita-interest { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.vita-interest-name { min-width: 120px; color: var(--text-primary, #e2e8f0); font-weight: 500; }
+.vita-interest-bar { flex: 1; height: 8px; background: rgba(59,130,246,0.1); border-radius: 4px; overflow: hidden; }
+.vita-interest-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); border-radius: 4px; transition: width 0.5s ease; }
+.vita-interest-count { font-size: 12px; color: var(--text-muted, #94a3b8); min-width: 25px; text-align: right; }
+.vita-summary { font-size: 13px; line-height: 1.6; color: var(--text-secondary, #cbd5e1); margin-bottom: 12px; }
