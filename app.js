@@ -552,16 +552,49 @@ function renderPosts(posts) {
 async function loadTimeline(memberId) {
     const feed = $('timeline-feed');
     try {
+        // Load timeline entries
         const { data: entries, error } = await sb.from('timeline_entries').select('*').eq('member_id', memberId).order('created_at', { ascending: true });
         if (error) throw error;
-        if (!entries || entries.length === 0) {
-            feed.innerHTML = '<div class="empty-state"><p>Noch keine Einträge im Verlauf</p></div>';
+
+        // Load post_comments for this member with post details
+        var comments = [];
+        try {
+            var cResult = await sb.from('post_comments')
+                .select('id, comment_text, comment_date, likes, depth, is_reply, created_at, author_name, post_id, posts(post_title, author_name, author_username, post_url, category, posted_at)')
+                .eq('member_id', memberId)
+                .order('created_at', { ascending: true });
+            if (cResult.data) comments = cResult.data;
+        } catch (e) { console.warn('Comments load error:', e); }
+
+        // Merge timeline entries and comments into one feed
+        var allItems = [];
+
+        // Add regular timeline entries (skip old system "kommentiert" entries)
+        (entries || []).forEach(function(e) {
+            if (e.entry_type === 'system' && e.content && e.content.indexOf('kommentiert in:') !== -1) return; // skip old grouped entries
+            allItems.push({ type: 'timeline', data: e, sortDate: new Date(e.created_at) });
+        });
+
+        // Add comment entries
+        comments.forEach(function(c) {
+            allItems.push({ type: 'comment', data: c, sortDate: new Date(c.created_at) });
+        });
+
+        // Sort by date
+        allItems.sort(function(a, b) { return a.sortDate - b.sortDate; });
+
+        if (allItems.length === 0) {
+            feed.innerHTML = '<div class="empty-state"><p>Noch keine Eintraege im Verlauf</p></div>';
             return;
         }
-        feed.innerHTML = entries.map(renderTimelineEntry).join('');
+
+        feed.innerHTML = allItems.map(function(item) {
+            if (item.type === 'comment') return renderCommentEntry(item.data);
+            return renderTimelineEntry(item.data);
+        }).join('');
         feed.scrollTop = feed.scrollHeight;
     } catch (err) {
-        feed.innerHTML = `<p class="text-muted" style="padding:12px">${escapeHtml(err.message)}</p>`;
+        feed.innerHTML = '<p class="text-muted" style="padding:12px">' + escapeHtml(err.message) + '</p>';
     }
 }
 
@@ -575,30 +608,67 @@ function renderTimelineEntry(e) {
 
     let audioHtml = '';
     if (e.audio_url && e.audio_url.startsWith('data:audio')) {
-        audioHtml = `<div class="timeline-audio"><audio controls src="${e.audio_url}" preload="none"></audio></div>`;
+        audioHtml = '<div class="timeline-audio"><audio controls src="' + e.audio_url + '" preload="none"></audio></div>';
     }
 
     let channelHtml = '';
     if (e.channel) {
-        channelHtml = `<div class="timeline-channel">Kanal: ${escapeHtml(e.channel)}</div>`;
+        channelHtml = '<div class="timeline-channel">Kanal: ' + escapeHtml(e.channel) + '</div>';
     }
 
-    return `
-        <div class="timeline-entry">
-            <div class="timeline-icon timeline-icon-${e.entry_type}">${icon}</div>
-            <div class="timeline-body">
-                <div class="timeline-header">
-                    <span class="timeline-author">${escapeHtml(e.user_name || 'System')}</span>
-                    <span class="badge ${badgeCls} timeline-type-badge">${entryTypeLabel(e.entry_type)}</span>
-                    <span class="timeline-time">${relativeTime(e.created_at)}</span>
-                </div>
-                <div class="timeline-text">${escapeHtml(e.content || '')}</div>
-                ${audioHtml}
-                ${channelHtml}
-            </div>
-        </div>
-    `;
+    return '<div class="timeline-entry">' +
+        '<div class="timeline-icon timeline-icon-' + e.entry_type + '">' + icon + '</div>' +
+        '<div class="timeline-body">' +
+            '<div class="timeline-header">' +
+                '<span class="timeline-author">' + escapeHtml(e.user_name || 'System') + '</span>' +
+                '<span class="badge ' + badgeCls + ' timeline-type-badge">' + entryTypeLabel(e.entry_type) + '</span>' +
+                '<span class="timeline-time">' + relativeTime(e.created_at) + '</span>' +
+            '</div>' +
+            '<div class="timeline-text">' + escapeHtml(e.content || '') + '</div>' +
+            audioHtml +
+            channelHtml +
+        '</div>' +
+    '</div>';
 }
+
+function renderCommentEntry(c) {
+    var post = c.posts || {};
+    var postTitle = post.post_title || 'Unbekannter Post';
+    var postAuthor = post.author_name || 'Unbekannt';
+    var postUrl = post.post_url || '';
+    var postCategory = post.category || '';
+    var commentText = c.comment_text || '';
+    var commentDate = c.comment_date || '';
+    var commentLikes = c.likes || 0;
+    var isReply = c.is_reply;
+    var icon = isReply ? '↩️' : '💬';
+
+    var linkHtml = postUrl ? '<a href="' + escapeHtml(postUrl) + '" target="_blank" rel="noopener" style="color:#3b82f6;text-decoration:none;font-size:12px">🔗 Post oeffnen</a>' : '';
+    var categoryHtml = postCategory ? '<span class="badge badge-blue" style="font-size:10px;margin-left:4px">' + escapeHtml(postCategory) + '</span>' : '';
+    var likesHtml = commentLikes > 0 ? '<span style="font-size:12px;color:var(--text-muted)">👍 ' + commentLikes + '</span>' : '';
+
+    return '<div class="timeline-entry timeline-comment-entry">' +
+        '<div class="timeline-icon timeline-icon-comment">' + icon + '</div>' +
+        '<div class="timeline-body">' +
+            '<div class="timeline-header">' +
+                '<span class="timeline-author">Kommentar</span>' +
+                '<span class="badge badge-green timeline-type-badge">Skool</span>' +
+                '<span class="timeline-time">' + relativeTime(c.created_at) + '</span>' +
+            '</div>' +
+            '<div class="timeline-comment-post">' +
+                '<strong>Post:</strong> ' + escapeHtml(postTitle) + categoryHtml +
+                '<br><strong>Von:</strong> ' + escapeHtml(postAuthor) +
+                (commentDate ? ' <span style="color:var(--text-muted);font-size:12px">(' + escapeHtml(commentDate) + ')</span>' : '') +
+            '</div>' +
+            '<div class="timeline-comment-text">' +
+                (isReply ? '<span style="color:var(--text-muted);font-size:12px">↩️ Antwort:</span> ' : '') +
+                escapeHtml(commentText) +
+            '</div>' +
+            '<div class="timeline-comment-meta">' + likesHtml + ' ' + linkHtml + '</div>' +
+        '</div>' +
+    '</div>';
+}
+
 
 async function addTimelineEntry() {
     const content = $('timeline-content').value.trim();
