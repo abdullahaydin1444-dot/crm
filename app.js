@@ -631,10 +631,11 @@ function renderTimelineEntry(e) {
         '</div>';
 }
 
-function renderCommentEntry(c) {
+function renderCommentEntry(c, memberLookup) {
     var post = c.posts || {};
     var postTitle = post.post_title || 'Unbekannter Post';
     var postAuthor = post.author_name || 'Unbekannt';
+    var postAuthorUsername = post.author_username || '';
     var postUrl = post.post_url || '';
     var postCategory = post.category || '';
     var commentText = c.comment_text || '';
@@ -642,6 +643,15 @@ function renderCommentEntry(c) {
     var commentLikes = c.likes || 0;
     var isReply = c.is_reply;
     var icon = isReply ? '↩️' : '💬';
+
+    // Author link: green if member exists, red if not
+    var authorHtml = '';
+    var authorMember = (memberLookup && postAuthorUsername) ? memberLookup[postAuthorUsername] : null;
+    if (authorMember) {
+        authorHtml = '<a href="#member/' + authorMember.id + '" class="author-link author-link-found">' + escapeHtml(postAuthor) + '</a>';
+    } else {
+        authorHtml = '<span class="author-link author-link-missing">' + escapeHtml(postAuthor) + '</span>';
+    }
 
     var linkHtml = postUrl ? '<a href="' + escapeHtml(postUrl) + '" target="_blank" rel="noopener" style="color:#3b82f6;text-decoration:none;font-size:12px">🔗 Post oeffnen</a>' : '';
     var categoryHtml = postCategory ? '<span class="badge badge-blue" style="font-size:10px;margin-left:4px">' + escapeHtml(postCategory) + '</span>' : '';
