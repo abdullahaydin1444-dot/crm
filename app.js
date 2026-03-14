@@ -36,16 +36,16 @@ function qs(sel) { return document.querySelector(sel); }
 function qsa(sel) { return document.querySelectorAll(sel); }
 
 function avatarColor(name) {
-    const colors = ['#3b82f6','#10b981','#8b5cf6','#d97706','#ef4444','#ec4899','#06b6d4','#f97316'];
+    const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#d97706', '#ef4444', '#ec4899', '#06b6d4', '#f97316'];
     let hash = 0;
-    for (let i = 0; i < (name||'').length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    for (let i = 0; i < (name || '').length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
     return colors[Math.abs(hash) % colors.length];
 }
 
 function initials(name) {
     if (!name) return '?';
     const parts = name.trim().split(/\s+/);
-    if (parts.length >= 2) return (parts[0][0] + parts[parts.length-1][0]).toUpperCase();
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     return name.substring(0, 2).toUpperCase();
 }
 
@@ -74,9 +74,9 @@ function relativeTime(d) {
         const now = new Date();
         const diff = (now - dt) / 1000;
         if (diff < 60) return 'Gerade eben';
-        if (diff < 3600) return `vor ${Math.floor(diff/60)} Min.`;
-        if (diff < 86400) return `vor ${Math.floor(diff/3600)} Std.`;
-        if (diff < 604800) return `vor ${Math.floor(diff/86400)} Tagen`;
+        if (diff < 3600) return `vor ${Math.floor(diff / 60)} Min.`;
+        if (diff < 86400) return `vor ${Math.floor(diff / 3600)} Std.`;
+        if (diff < 604800) return `vor ${Math.floor(diff / 86400)} Tagen`;
         return formatDate(d);
     } catch { return d; }
 }
@@ -136,7 +136,7 @@ function entryTypeBadgeColor(t) {
 
 function escapeHtml(str) {
     if (!str) return '';
-    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // ─── Auth ────────────────────────────────
@@ -250,7 +250,7 @@ async function loadDashboard() {
         const atRisk = all.filter(m => m.activity_status === 'at_risk');
         const revenue = all.reduce((sum, m) => {
             if (m.membership_type === 'monthly_97') return sum + 97;
-            if (m.membership_type === 'yearly_697') return sum + Math.round(697/12);
+            if (m.membership_type === 'yearly_697') return sum + Math.round(697 / 12);
             return sum;
         }, 0);
 
@@ -281,9 +281,9 @@ async function loadDashboard() {
         await loadActivityFeed();
 
         // Charts
-        const byCity = {}; all.forEach(m => { if (m.city) byCity[m.city] = (byCity[m.city]||0)+1; });
-        const byMembership = {}; all.forEach(m => { const k = m.membership_type||'free'; byMembership[membershipLabel(k)] = (byMembership[membershipLabel(k)]||0)+1; });
-        const byLevel = {}; all.forEach(m => { const k = m.progress_level||'beginner'; byLevel[levelLabel(k)] = (byLevel[levelLabel(k)]||0)+1; });
+        const byCity = {}; all.forEach(m => { if (m.city) byCity[m.city] = (byCity[m.city] || 0) + 1; });
+        const byMembership = {}; all.forEach(m => { const k = m.membership_type || 'free'; byMembership[membershipLabel(k)] = (byMembership[membershipLabel(k)] || 0) + 1; });
+        const byLevel = {}; all.forEach(m => { const k = m.progress_level || 'beginner'; byLevel[levelLabel(k)] = (byLevel[levelLabel(k)] || 0) + 1; });
         renderBarChart($('chart-city'), byCity, 'var(--accent-blue)');
         renderBarChart($('chart-membership'), byMembership, 'var(--accent-purple)');
         renderBarChart($('chart-level'), byLevel, 'var(--accent-green)');
@@ -367,7 +367,7 @@ function renderBarChart(container, data, color) {
     container.innerHTML = entries.map(([label, val]) => `
         <div class="chart-bar-group">
             <div class="chart-bar-label"><span>${escapeHtml(label)}</span><span>${val}</span></div>
-            <div class="chart-bar-track"><div class="chart-bar-fill" style="width:${(val/max)*100}%;background:${color}"></div></div>
+            <div class="chart-bar-track"><div class="chart-bar-fill" style="width:${(val / max) * 100}%;background:${color}"></div></div>
         </div>
     `).join('');
 }
@@ -570,25 +570,25 @@ async function loadTimeline(memberId) {
         var allItems = [];
 
         // Add regular timeline entries (skip old system "kommentiert" entries)
-        (entries || []).forEach(function(e) {
+        (entries || []).forEach(function (e) {
             if (e.entry_type === 'system' && e.content && e.content.indexOf('kommentiert in:') !== -1) return; // skip old grouped entries
             allItems.push({ type: 'timeline', data: e, sortDate: new Date(e.created_at) });
         });
 
         // Add comment entries
-        comments.forEach(function(c) {
+        comments.forEach(function (c) {
             allItems.push({ type: 'comment', data: c, sortDate: new Date(c.created_at) });
         });
 
         // Sort by date
-        allItems.sort(function(a, b) { return a.sortDate - b.sortDate; });
+        allItems.sort(function (a, b) { return a.sortDate - b.sortDate; });
 
         if (allItems.length === 0) {
             feed.innerHTML = '<div class="empty-state"><p>Noch keine Eintraege im Verlauf</p></div>';
             return;
         }
 
-        feed.innerHTML = allItems.map(function(item) {
+        feed.innerHTML = allItems.map(function (item) {
             if (item.type === 'comment') return renderCommentEntry(item.data);
             return renderTimelineEntry(item.data);
         }).join('');
@@ -619,16 +619,16 @@ function renderTimelineEntry(e) {
     return '<div class="timeline-entry">' +
         '<div class="timeline-icon timeline-icon-' + e.entry_type + '">' + icon + '</div>' +
         '<div class="timeline-body">' +
-            '<div class="timeline-header">' +
-                '<span class="timeline-author">' + escapeHtml(e.user_name || 'System') + '</span>' +
-                '<span class="badge ' + badgeCls + ' timeline-type-badge">' + entryTypeLabel(e.entry_type) + '</span>' +
-                '<span class="timeline-time">' + relativeTime(e.created_at) + '</span>' +
-            '</div>' +
-            '<div class="timeline-text">' + escapeHtml(e.content || '') + '</div>' +
-            audioHtml +
-            channelHtml +
+        '<div class="timeline-header">' +
+        '<span class="timeline-author">' + escapeHtml(e.user_name || 'System') + '</span>' +
+        '<span class="badge ' + badgeCls + ' timeline-type-badge">' + entryTypeLabel(e.entry_type) + '</span>' +
+        '<span class="timeline-time">' + relativeTime(e.created_at) + '</span>' +
         '</div>' +
-    '</div>';
+        '<div class="timeline-text">' + escapeHtml(e.content || '') + '</div>' +
+        audioHtml +
+        channelHtml +
+        '</div>' +
+        '</div>';
 }
 
 function renderCommentEntry(c) {
@@ -650,23 +650,23 @@ function renderCommentEntry(c) {
     return '<div class="timeline-entry timeline-comment-entry">' +
         '<div class="timeline-icon timeline-icon-comment">' + icon + '</div>' +
         '<div class="timeline-body">' +
-            '<div class="timeline-header">' +
-                '<span class="timeline-author">Kommentar</span>' +
-                '<span class="badge badge-green timeline-type-badge">Skool</span>' +
-                '<span class="timeline-time">' + relativeTime(c.created_at) + '</span>' +
-            '</div>' +
-            '<div class="timeline-comment-post">' +
-                '<strong>Post:</strong> ' + escapeHtml(postTitle) + categoryHtml +
-                '<br><strong>Von:</strong> ' + escapeHtml(postAuthor) +
-                (commentDate ? ' <span style="color:var(--text-muted);font-size:12px">(' + escapeHtml(commentDate) + ')</span>' : '') +
-            '</div>' +
-            '<div class="timeline-comment-text">' +
-                (isReply ? '<span style="color:var(--text-muted);font-size:12px">↩️ Antwort:</span> ' : '') +
-                escapeHtml(commentText) +
-            '</div>' +
-            '<div class="timeline-comment-meta">' + likesHtml + ' ' + linkHtml + '</div>' +
+        '<div class="timeline-header">' +
+        '<span class="timeline-author">Kommentar</span>' +
+        '<span class="badge badge-green timeline-type-badge">Skool</span>' +
+        '<span class="timeline-time">' + relativeTime(c.created_at) + '</span>' +
         '</div>' +
-    '</div>';
+        '<div class="timeline-comment-post">' +
+        '<strong>Post:</strong> ' + escapeHtml(postTitle) + categoryHtml +
+        '<br><strong>Von:</strong> ' + escapeHtml(postAuthor) +
+        (commentDate ? ' <span style="color:var(--text-muted);font-size:12px">(' + escapeHtml(commentDate) + ')</span>' : '') +
+        '</div>' +
+        '<div class="timeline-comment-text">' +
+        (isReply ? '<span style="color:var(--text-muted);font-size:12px">↩️ Antwort:</span> ' : '') +
+        escapeHtml(commentText) +
+        '</div>' +
+        '<div class="timeline-comment-meta">' + likesHtml + ' ' + linkHtml + '</div>' +
+        '</div>' +
+        '</div>';
 }
 
 
@@ -1263,12 +1263,12 @@ async function importSkoolJSON(jsonText) {
         // Load existing members + posts for duplicate check
         const { data: existingMembers } = await sb.from('members').select('id, name, skool_username');
         const memberMap = new Map();
-        (existingMembers || []).forEach(function(m) {
+        (existingMembers || []).forEach(function (m) {
             if (m.skool_username) memberMap.set(m.skool_username, m);
         });
 
         const { data: existingPosts } = await sb.from('posts').select('post_url');
-        const existingUrls = new Set((existingPosts || []).map(function(p) { return p.post_url; }).filter(Boolean));
+        const existingUrls = new Set((existingPosts || []).map(function (p) { return p.post_url; }).filter(Boolean));
         log(memberMap.size + ' bestehende Mitglieder geladen', 'log-info');
         log(existingUrls.size + ' bestehende Post-URLs fuer Duplikat-Check', 'log-info');
 
@@ -1387,7 +1387,7 @@ async function importSkoolJSON(jsonText) {
                     seenCommenters[tcUser] = true;
                     var tcMember = memberMap.get(tcUser);
                     if (!tcMember) continue;
-                    var commentCount = comments.filter(function(x) { return x.author && x.author.username === tcUser; }).length;
+                    var commentCount = comments.filter(function (x) { return x.author && x.author.username === tcUser; }).length;
                     await sb.from('timeline_entries').insert({
                         member_id: tcMember.id,
                         entry_type: 'system',
@@ -1580,28 +1580,28 @@ document.addEventListener('DOMContentLoaded', () => {
     $('btn-export-data').addEventListener('click', exportData);
 
     // Skool JSON paste + community toggle
-    $('btn-community-free').addEventListener('click', function() {
+    $('btn-community-free').addEventListener('click', function () {
         selectedCommunity = 'free';
         $('btn-community-free').classList.add('active');
         $('btn-community-paid').classList.remove('active');
     });
-    $('btn-community-paid').addEventListener('click', function() {
+    $('btn-community-paid').addEventListener('click', function () {
         selectedCommunity = 'paid';
         $('btn-community-paid').classList.add('active');
         $('btn-community-free').classList.remove('active');
     });
-    $('btn-import-json-paste').addEventListener('click', function() {
+    $('btn-import-json-paste').addEventListener('click', function () {
         var jsonText = $('import-json-paste').value.trim();
         if (!jsonText) { toast('Bitte JSON einfuegen', 'error'); return; }
         var btn = $('btn-import-json-paste');
         btn.disabled = true;
         btn.textContent = '⏳ Importiere...';
-        importSkoolJSON(jsonText).finally(function() {
+        importSkoolJSON(jsonText).finally(function () {
             btn.disabled = false;
             btn.textContent = '📋 JSON Importieren';
         });
     });
-    $('btn-clear-json-paste').addEventListener('click', function() {
+    $('btn-clear-json-paste').addEventListener('click', function () {
         $('import-json-paste').value = '';
         $('import-json-result').textContent = '';
         $('import-json-result').className = 'import-result';

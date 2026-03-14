@@ -1622,3 +1622,9 @@ a:hover { text-decoration: underline; }
 .timeline-comment-post { font-size: 13px; padding: 6px 10px; background: var(--bg-secondary, #131620); border-radius: 6px; margin: 6px 0; border-left: 2px solid #3b82f6; line-height: 1.5; }
 .timeline-comment-text { font-size: 13px; padding: 8px 10px; background: rgba(16,185,129,0.06); border-radius: 6px; margin: 4px 0; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 .timeline-comment-meta { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
+
+/* ─── Author Link in Timeline ─── */
+.author-link { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 13px; font-weight: 600; text-decoration: none; transition: all 0.2s; }
+.author-link-found { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); cursor: pointer; }
+.author-link-found:hover { background: rgba(16,185,129,0.3); transform: scale(1.02); }
+.author-link-missing { background: rgba(239,68,68,0.12); color: #ef4444; border: 1px solid rgba(239,68,68,0.25); cursor: default; }
