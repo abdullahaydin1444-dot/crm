@@ -493,6 +493,15 @@ function renderMemberDetail(m) {
             <span class="field-label">Zuständig</span>
             <span class="field-value"><select onchange="updateMemberField(${m.id},'assigned_to',this.value)">${assignedOptions}</select></span>
         </div>
+        <div class="field-row">
+            <span class="field-label">Akquise-Status</span>
+            <span class="field-value"><select onchange="updateMemberField(${m.id},'acquisition_status',this.value)" class="acq-status-select">
+                <option value="" ${!m.acquisition_status ? 'selected' : ''}>— Kein Status —</option>
+                <option value="hot_lead" ${m.acquisition_status === 'hot_lead' ? 'selected' : ''}>🔥 Heißer Lead</option>
+                <option value="in_progress" ${m.acquisition_status === 'in_progress' ? 'selected' : ''}>🟡 In Bearbeitung</option>
+                <option value="no_interest" ${m.acquisition_status === 'no_interest' ? 'selected' : ''}>❌ Kein Interesse</option>
+            </select></span>
+        </div>
     `;
 
     // Labels
