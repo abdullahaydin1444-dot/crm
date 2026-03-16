@@ -494,7 +494,7 @@ async function loadMemberDetail(id) {
         member.custom_labels = (labels || []).map(l => l.label);
         // Cache member IDs for prev/next navigation
         if (cachedMemberIds.length === 0) {
-            var idRes = await sb.from('members').select('id').order('name');
+            var idRes = await sb.from('members').select('id').order('name').range(0, 9999);
             cachedMemberIds = (idRes.data || []).map(function(m) { return m.id; });
         }
         renderMemberDetail(member);
