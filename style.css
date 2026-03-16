@@ -1652,3 +1652,37 @@ a:hover { text-decoration: underline; }
 .vita-interest-fill { height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); border-radius: 4px; transition: width 0.5s ease; }
 .vita-interest-count { font-size: 12px; color: var(--text-muted, #94a3b8); min-width: 25px; text-align: right; }
 .vita-summary { font-size: 13px; line-height: 1.6; color: var(--text-secondary, #cbd5e1); margin-bottom: 12px; }
+
+/* ─── Connections Section ─── */
+.connections-container { padding: 16px; overflow-y: auto; }
+.connections-section { background: var(--bg-secondary, #131620); border: 1px solid var(--border-light, #2a2f3a); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.connections-section h4 { margin: 0 0 4px 0; font-size: 14px; color: var(--text-primary, #e2e8f0); display: flex; align-items: center; gap: 8px; }
+.connections-section .connections-subtitle { font-size: 11px; color: var(--text-muted, #94a3b8); margin-bottom: 14px; }
+.connection-list { display: flex; flex-direction: column; gap: 6px; }
+.connection-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; cursor: pointer; transition: background 0.2s, transform 0.15s; }
+.connection-item:hover { background: var(--bg-hover, rgba(255,255,255,0.04)); transform: translateX(2px); }
+.connection-avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.72rem; color: #fff; flex-shrink: 0; }
+.connection-info { flex: 1; min-width: 0; }
+.connection-name { font-size: 13px; font-weight: 600; color: var(--text-primary, #e2e8f0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.connection-meta { font-size: 11px; color: var(--text-muted, #94a3b8); }
+.connection-stats { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.connection-count { font-size: 13px; font-weight: 700; color: var(--accent-blue, #3b82f6); min-width: 28px; text-align: right; }
+.connection-bar-track { width: 60px; height: 6px; background: rgba(59,130,246,0.1); border-radius: 3px; overflow: hidden; }
+.connection-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+.connection-bar-fill-blue { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+.connection-bar-fill-green { background: linear-gradient(90deg, #10b981, #34d399); }
+.connection-bar-fill-purple { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+.connections-empty { text-align: center; padding: 24px; color: var(--text-muted, #94a3b8); font-size: 13px; }
+.connections-stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+.conn-stat { background: var(--bg-secondary, #131620); border: 1px solid var(--border-light, #2a2f3a); border-radius: 10px; padding: 12px 8px; text-align: center; }
+.conn-stat-number { font-size: 20px; font-weight: 700; color: var(--text-primary, #e2e8f0); }
+.conn-stat-label { font-size: 10px; color: var(--text-muted, #94a3b8); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* ─── Vita Activity Items ─── */
+.vita-activity-item { padding: 10px; margin-bottom: 8px; background: var(--bg-primary, #0d1017); border: 1px solid var(--border-light, #2a2f3a); border-radius: 8px; }
+.vita-activity-post { font-size: 13px; line-height: 1.5; }
+.vita-activity-context { margin-top: 4px; padding: 6px 8px; font-size: 12px; color: var(--text-muted, #94a3b8); background: rgba(59,130,246,0.05); border-radius: 4px; font-style: italic; line-height: 1.4; white-space: pre-wrap; word-break: break-word; }
+.vita-activity-comment { margin-top: 6px; padding: 6px 8px; font-size: 13px; background: rgba(16,185,129,0.06); border-left: 2px solid #10b981; border-radius: 0 4px 4px 0; line-height: 1.4; }
+
+/* ─── Team Notification Unread ─── */
+.notif-unread { background: rgba(59,130,246,0.06); border-left: 2px solid var(--accent-blue, #3b82f6); }

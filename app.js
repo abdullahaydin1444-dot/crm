@@ -243,7 +243,11 @@ function showPage(name) {
 // ─── Dashboard ───────────────────────────
 async function loadDashboard() {
     try {
-        const { data: members, error } = await sb.from('members').select('*');
+        // Use count query for exact total (no 1000 limit)
+        var countRes = await sb.from('members').select('*', { count: 'exact', head: true });
+        var totalCount = countRes.count || 0;
+
+        const { data: members, error } = await sb.from('members').select('*').range(0, 4999);
         if (error) throw error;
         const all = members || [];
         const paying = all.filter(m => m.membership_type && m.membership_type !== 'free');
@@ -254,7 +258,7 @@ async function loadDashboard() {
             return sum;
         }, 0);
 
-        $('stat-total').textContent = all.length;
+        $('stat-total').textContent = totalCount;
         $('stat-paying').textContent = paying.length;
         $('stat-revenue').textContent = `${revenue.toLocaleString('de-DE')} €`;
         $('stat-atrisk').textContent = atRisk.length;
@@ -279,12 +283,11 @@ async function loadDashboard() {
         `;
         await loadMyTasks();
         await loadActivityFeed();
+        await loadTeamNotifications();
 
-        // Charts
-        const byCity = {}; all.forEach(m => { if (m.city) byCity[m.city] = (byCity[m.city] || 0) + 1; });
+        // Charts (removed city chart — replaced by Team-Benachrichtigungen)
         const byMembership = {}; all.forEach(m => { const k = m.membership_type || 'free'; byMembership[membershipLabel(k)] = (byMembership[membershipLabel(k)] || 0) + 1; });
         const byLevel = {}; all.forEach(m => { const k = m.progress_level || 'beginner'; byLevel[levelLabel(k)] = (byLevel[levelLabel(k)] || 0) + 1; });
-        renderBarChart($('chart-city'), byCity, 'var(--accent-blue)');
         renderBarChart($('chart-membership'), byMembership, 'var(--accent-purple)');
         renderBarChart($('chart-level'), byLevel, 'var(--accent-green)');
     } catch (err) {
@@ -354,6 +357,49 @@ async function loadActivityFeed() {
             `;
         }).join('');
     } catch { feedEl.innerHTML = '<p class="text-muted" style="padding:12px;font-size:0.85rem">Fehler beim Laden</p>'; }
+}
+
+async function loadTeamNotifications() {
+    var notifEl = $('team-notifications-feed');
+    if (!notifEl) return;
+    try {
+        // Load team messages sent TO current user
+        var res = await sb.from('team_messages')
+            .select('*, sender:sender_id(display_name), member:member_id(name)')
+            .eq('recipient_id', currentUser.id)
+            .order('created_at', { ascending: false })
+            .limit(8);
+        var messages = (res.data || []);
+
+        if (messages.length === 0) {
+            notifEl.innerHTML = '<p class="text-muted" style="padding:12px;font-size:0.85rem">Keine Team-Benachrichtigungen</p>';
+            return;
+        }
+
+        notifEl.innerHTML = messages.map(function(msg) {
+            var senderName = (msg.sender && msg.sender.display_name) || 'System';
+            var memberLink = '';
+            if (msg.member_id && msg.member) {
+                memberLink = ' <a href="#member/' + msg.member_id + '" style="color:var(--accent-blue);text-decoration:none">📋 ' + escapeHtml(msg.member.name) + '</a>';
+            }
+            var isRead = msg.is_read;
+            return '<div class="activity-item' + (isRead ? '' : ' notif-unread') + '">' +
+                '<div class="activity-dot" style="background:' + (isRead ? 'var(--text-muted)' : 'var(--accent-blue)') + '"></div>' +
+                '<div class="activity-info">' +
+                    '<div class="activity-text">' +
+                        '<strong>' + escapeHtml(senderName) + '</strong>' +
+                        (isRead ? '' : ' <span class="badge badge-blue" style="font-size:9px">Neu</span>') +
+                        memberLink +
+                    '</div>' +
+                    '<div class="activity-meta" style="margin-top:2px">' + escapeHtml(msg.content || '').substring(0, 100) + '</div>' +
+                    '<div class="activity-meta">' + relativeTime(msg.created_at) + '</div>' +
+                '</div>' +
+            '</div>';
+        }).join('');
+    } catch(e) {
+        console.warn('Team notifications error:', e);
+        notifEl.innerHTML = '<p class="text-muted" style="padding:12px;font-size:0.85rem">Team-Nachrichten nicht verfuegbar</p>';
+    }
 }
 
 function renderBarChart(container, data, color) {
@@ -842,30 +888,90 @@ async function loadVita(memberId) {
     if (!container) return;
 
     try {
-        container.innerHTML = '<div class="empty-state"><p>Vita wird geladen...</p></div>';
+        container.innerHTML = '<div class="empty-state"><p>⏳ Vita wird analysiert...</p></div>';
 
         // Load member
         var mRes = await sb.from('members').select('*').eq('id', memberId).single();
         var member = mRes.data;
 
-        // Load posts
-        var pRes = await sb.from('posts').select('*').eq('member_id', memberId);
+        // Load posts by this member (full content)
+        var pRes = await sb.from('posts').select('*').eq('member_id', memberId).order('created_at', { ascending: false });
         var posts = pRes.data || [];
 
-        // Load comments with post info
+        // Load comments with FULL post details (title, content, author, category)
         var cRes = await sb.from('post_comments')
-            .select('*, posts(post_title, category)')
-            .eq('member_id', memberId);
+            .select('*, posts(post_title, post_content, author_name, category, post_url)')
+            .eq('member_id', memberId)
+            .order('created_at', { ascending: false });
         var comments = cRes.data || [];
 
-        // Stats
+        // Load timeline entries (notes, calls etc.)
+        var tRes = await sb.from('timeline_entries').select('*').eq('member_id', memberId).order('created_at', { ascending: false });
+        var timeline = (tRes.data || []).filter(function(e) {
+            return e.entry_type !== 'system';
+        });
+
+        // ── Stats ──
         var totalPosts = posts.length;
         var totalComments = comments.length;
-        var totalLikes = 0;
-        posts.forEach(function(p) { totalLikes += (p.likes || 0); });
-        comments.forEach(function(c) { totalLikes += (c.likes || 0); });
+        var totalLikesReceived = 0;
+        var totalLikesGiven = 0;
+        posts.forEach(function(p) { totalLikesReceived += (p.likes || 0); });
+        comments.forEach(function(c) { totalLikesGiven += (c.likes || 0); });
 
-        // Categories
+        // ── Topic Analysis from content ──
+        var topicKeywords = {
+            'Datenschutz & DSGVO': ['datenschutz', 'dsgvo', 'privacy', 'gdpr', 'daten', 'cookie', 'einwilligung', 'personenbezogen'],
+            'KI & Automatisierung': ['ki ', ' ai ', 'kuenstlich', 'künstlich', 'chatgpt', 'gpt', 'openai', 'claude', 'automatisierung', 'automat', 'prompt', 'llm', 'bot'],
+            'Marketing & Vertrieb': ['marketing', 'vertrieb', 'sales', 'funnel', 'lead', 'ads', 'werbung', 'kampagne', 'conversion', 'kund', 'akquise'],
+            'Social Media': ['social media', 'instagram', 'tiktok', 'youtube', 'linkedin', 'facebook', 'content', 'reichweite', 'follower', 'viral'],
+            'Technik & Entwicklung': ['programmier', 'code', 'software', 'entwickl', 'api', 'website', 'app', 'tech', 'server', 'datenbank', 'javascript', 'python'],
+            'Business & Strategie': ['business', 'strategie', 'unternehm', 'startup', 'gruend', 'gründ', 'skalier', 'wachstum', 'revenue', 'umsatz', 'geschaeft'],
+            'Community & Networking': ['community', 'netzwerk', 'networking', 'mitglied', 'austausch', 'zusammen', 'gruppe', 'skool', 'mastermind'],
+            'E-Mail & Newsletter': ['email', 'e-mail', 'newsletter', 'mail', 'betreff', 'autoresponder', 'opt-in', 'liste'],
+            'SEO & Website': ['seo', 'google', 'ranking', 'keyword', 'backlink', 'traffic', 'webseite', 'website', 'domain', 'wordpress'],
+            'Finanzen & Investition': ['finanz', 'invest', 'geld', 'kapital', 'rendite', 'aktie', 'krypto', 'bitcoin', 'budget', 'steuer'],
+            'Coaching & Beratung': ['coaching', 'coach', 'berat', 'mentoring', 'mentor', 'training', 'kurs', 'online-kurs', 'webinar'],
+            'Mindset & Motivation': ['mindset', 'motivation', 'erfolg', 'ziel', 'disziplin', 'gewohnheit', 'habit', 'produktiv', 'fokus', 'wachstum'],
+            'Design & Kreativitaet': ['design', 'kreativ', 'grafik', 'canva', 'brand', 'logo', 'visual', 'bild', 'video', 'foto'],
+            'Tools & Software': ['tool', 'software', 'notion', 'zapier', 'make', 'n8n', 'airtable', 'clickup', 'trello', 'slack'],
+            'Freelancing & Agentur': ['freelanc', 'agentur', 'selbst', 'freiberuf', 'auftraeg', 'auftrag', 'kunde', 'projekt', 'dienstleist']
+        };
+
+        // Collect all text for analysis
+        var allTexts = [];
+        comments.forEach(function(c) {
+            if (c.comment_text) allTexts.push(c.comment_text);
+            if (c.posts && c.posts.post_title) allTexts.push(c.posts.post_title);
+            if (c.posts && c.posts.post_content) allTexts.push(c.posts.post_content);
+        });
+        posts.forEach(function(p) {
+            if (p.post_title) allTexts.push(p.post_title);
+            if (p.post_content) allTexts.push(p.post_content);
+        });
+        timeline.forEach(function(e) {
+            if (e.content) allTexts.push(e.content);
+        });
+
+        var combinedText = allTexts.join(' ').toLowerCase();
+
+        // Score each topic
+        var topicScores = {};
+        Object.keys(topicKeywords).forEach(function(topic) {
+            var score = 0;
+            topicKeywords[topic].forEach(function(kw) {
+                var idx = 0;
+                var lower = combinedText;
+                while ((idx = lower.indexOf(kw, idx)) !== -1) {
+                    score++;
+                    idx += kw.length;
+                }
+            });
+            if (score > 0) topicScores[topic] = score;
+        });
+        var sortedTopics = Object.entries(topicScores).sort(function(a, b) { return b[1] - a[1]; });
+
+        // ── Categories ──
         var categories = {};
         comments.forEach(function(c) {
             var cat = (c.posts && c.posts.category) || 'Unkategorisiert';
@@ -877,7 +983,7 @@ async function loadVita(memberId) {
         });
         var sortedCats = Object.entries(categories).sort(function(a, b) { return b[1] - a[1]; });
 
-        // Engagement level
+        // ── Engagement & Type ──
         var total = totalPosts + totalComments;
         var engLevel = 'Passiv';
         var engColor = '#ef4444';
@@ -885,47 +991,69 @@ async function loadVita(memberId) {
         else if (total > 5) { engLevel = 'Aktiv'; engColor = '#3b82f6'; }
         else if (total > 0) { engLevel = 'Gelegentlich'; engColor = '#f59e0b'; }
 
-        // Activity type
         var actType = 'Beobachter';
         if (totalPosts > 5 && totalComments > 10) actType = 'Community-Leader';
         else if (totalPosts > 3) actType = 'Content-Creator';
         else if (totalComments > 10) actType = 'Aktiver Kommentator';
         else if (totalComments > 0) actType = 'Gelegentlicher Teilnehmer';
 
-        // Build Vita HTML
+        // ══════ BUILD HTML ══════
         var html = '';
 
         // Stats Grid
         html += '<div class="vita-stats-grid">';
         html += '<div class="vita-stat"><div class="vita-stat-number">' + totalPosts + '</div><div class="vita-stat-label">Eigene Posts</div></div>';
         html += '<div class="vita-stat"><div class="vita-stat-number">' + totalComments + '</div><div class="vita-stat-label">Kommentare</div></div>';
-        html += '<div class="vita-stat"><div class="vita-stat-number">' + totalLikes + '</div><div class="vita-stat-label">Likes erhalten</div></div>';
+        html += '<div class="vita-stat"><div class="vita-stat-number">' + totalLikesReceived + '</div><div class="vita-stat-label">Likes erhalten</div></div>';
         html += '<div class="vita-stat"><div class="vita-stat-number" style="color:' + engColor + '">' + engLevel + '</div><div class="vita-stat-label">Engagement</div></div>';
         html += '</div>';
 
         // Personality card
         html += '<div class="vita-card">';
-        html += '<h4>Persoenlichkeitsprofil</h4>';
+        html += '<h4>📋 Persoenlichkeitsprofil</h4>';
         html += '<div class="vita-personality">';
-        html += '<div class="vita-trait"><span class="vita-trait-label">Typ:</span><span class="vita-trait-value">' + actType + '</span></div>';
-        html += '<div class="vita-trait"><span class="vita-trait-label">Mitgliedschaft:</span><span class="vita-trait-value">' + (member.membership_type === 'free' ? 'Free Community' : 'Bezahlte Community') + '</span></div>';
+        html += '<div class="vita-trait"><span class="vita-trait-label">Typ:</span><span class="vita-trait-value" style="font-weight:700;color:' + engColor + '">' + actType + '</span></div>';
+        html += '<div class="vita-trait"><span class="vita-trait-label">Mitgliedschaft:</span><span class="vita-trait-value">' + (member.membership_type === 'free' ? '🟡 Free Community' : '🔵 Bezahlte Community') + '</span></div>';
         html += '<div class="vita-trait"><span class="vita-trait-label">Status:</span><span class="vita-trait-value">' + (member.activity_status || 'Unbekannt') + '</span></div>';
+        if (member.acquisition_status) {
+            var acqLabels = { hot_lead: '🔥 Heisser Lead', in_progress: '🟡 In Bearbeitung', no_interest: '❌ Kein Interesse' };
+            html += '<div class="vita-trait"><span class="vita-trait-label">Akquise:</span><span class="vita-trait-value">' + (acqLabels[member.acquisition_status] || member.acquisition_status) + '</span></div>';
+        }
         if (member.city || member.country) {
-            html += '<div class="vita-trait"><span class="vita-trait-label">Standort:</span><span class="vita-trait-value">' + escapeHtml((member.city || '') + (member.city && member.country ? ', ' : '') + (member.country || '')) + '</span></div>';
+            html += '<div class="vita-trait"><span class="vita-trait-label">Standort:</span><span class="vita-trait-value">📍 ' + escapeHtml((member.city || '') + (member.city && member.country ? ', ' : '') + (member.country || '')) + '</span></div>';
         }
         if (member.bio) {
             html += '<div class="vita-trait"><span class="vita-trait-label">Bio:</span><span class="vita-trait-value">' + escapeHtml(member.bio) + '</span></div>';
         }
         html += '</div></div>';
 
-        // Interests
+        // ── TOPIC ANALYSIS (new!) ──
+        if (sortedTopics.length > 0) {
+            html += '<div class="vita-card">';
+            html += '<h4>🔍 Themenanalyse (aus Inhalten erkannt)</h4>';
+            html += '<p style="font-size:12px;color:var(--text-muted);margin:0 0 10px 0">Basierend auf ' + allTexts.length + ' analysierten Texten (Posts, Kommentare, Notizen)</p>';
+            html += '<div class="vita-interests">';
+            var topMax = sortedTopics[0] ? sortedTopics[0][1] : 1;
+            sortedTopics.forEach(function(entry) {
+                var pct = Math.round((entry[1] / topMax) * 100);
+                var color = pct > 70 ? '#10b981' : pct > 40 ? '#3b82f6' : '#8b5cf6';
+                html += '<div class="vita-interest">';
+                html += '<span class="vita-interest-name">' + escapeHtml(entry[0]) + '</span>';
+                html += '<div class="vita-interest-bar"><div class="vita-interest-fill" style="width:' + pct + '%;background:' + color + '"></div></div>';
+                html += '<span class="vita-interest-count">' + entry[1] + 'x</span>';
+                html += '</div>';
+            });
+            html += '</div></div>';
+        }
+
+        // ── Category breakdown ──
         if (sortedCats.length > 0) {
             html += '<div class="vita-card">';
-            html += '<h4>Interessen & Themen</h4>';
+            html += '<h4>📁 Kategorien</h4>';
             html += '<div class="vita-interests">';
-            var maxVal = sortedCats[0] ? sortedCats[0][1] : 1;
+            var catMax = sortedCats[0] ? sortedCats[0][1] : 1;
             sortedCats.forEach(function(entry) {
-                var pct = Math.round((entry[1] / maxVal) * 100);
+                var pct = Math.round((entry[1] / catMax) * 100);
                 html += '<div class="vita-interest">';
                 html += '<span class="vita-interest-name">' + escapeHtml(entry[0]) + '</span>';
                 html += '<div class="vita-interest-bar"><div class="vita-interest-fill" style="width:' + pct + '%"></div></div>';
@@ -935,17 +1063,69 @@ async function loadVita(memberId) {
             html += '</div></div>';
         }
 
-        // Recent activity summary
+        // ── Activity Feed: What did the person comment on? ──
+        if (comments.length > 0) {
+            html += '<div class="vita-card">';
+            html += '<h4>💬 Kommentar-Verlauf (' + comments.length + ')</h4>';
+            var showComments = comments.slice(0, 15); // Show max 15
+            showComments.forEach(function(c) {
+                var post = c.posts || {};
+                html += '<div class="vita-activity-item">';
+                html += '<div class="vita-activity-post">';
+                html += '<strong>📄 Post:</strong> ' + escapeHtml(post.post_title || 'Unbekannt');
+                if (post.category) html += ' <span class="badge badge-blue" style="font-size:10px">' + escapeHtml(post.category) + '</span>';
+                if (post.author_name) html += '<br><span style="color:var(--text-muted);font-size:12px">Von: ' + escapeHtml(post.author_name) + '</span>';
+                if (post.post_content) {
+                    html += '<div class="vita-activity-context">' + escapeHtml(post.post_content.substring(0, 150)) + (post.post_content.length > 150 ? '...' : '') + '</div>';
+                }
+                html += '</div>';
+                html += '<div class="vita-activity-comment">';
+                html += (c.is_reply ? '↩️ <strong>Antwort:</strong> ' : '💬 <strong>Kommentar:</strong> ') + escapeHtml(c.comment_text || '');
+                if (c.comment_date) html += ' <span style="color:var(--text-muted);font-size:11px">(' + escapeHtml(c.comment_date) + ')</span>';
+                if (c.likes > 0) html += ' <span style="font-size:11px">👍 ' + c.likes + '</span>';
+                html += '</div>';
+                html += '</div>';
+            });
+            if (comments.length > 15) {
+                html += '<p style="text-align:center;color:var(--text-muted);font-size:12px">... und ' + (comments.length - 15) + ' weitere Kommentare</p>';
+            }
+            html += '</div>';
+        }
+
+        // ── Own posts ──
+        if (posts.length > 0) {
+            html += '<div class="vita-card">';
+            html += '<h4>📝 Eigene Beitraege (' + posts.length + ')</h4>';
+            var showPosts = posts.slice(0, 10);
+            showPosts.forEach(function(p) {
+                html += '<div class="vita-activity-item">';
+                html += '<strong>📄 ' + escapeHtml(p.post_title || 'Ohne Titel') + '</strong>';
+                if (p.category) html += ' <span class="badge badge-blue" style="font-size:10px">' + escapeHtml(p.category) + '</span>';
+                html += '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">';
+                html += '👍 ' + (p.likes || 0) + ' Likes &middot; 💬 ' + (p.comments || 0) + ' Kommentare';
+                html += '</div>';
+                if (p.post_content) {
+                    html += '<div class="vita-activity-context">' + escapeHtml(p.post_content.substring(0, 200)) + (p.post_content.length > 200 ? '...' : '') + '</div>';
+                }
+                html += '</div>';
+            });
+            html += '</div>';
+        }
+
+        // ── AI Summary ──
         html += '<div class="vita-card">';
-        html += '<h4>Zusammenfassung fuer AI</h4>';
-        html += '<p class="vita-summary">' + escapeHtml(member.name) + ' ist ein <strong>' + actType + '</strong> in der ' +
+        html += '<h4>🤖 Zusammenfassung fuer AI</h4>';
+        var summaryText = escapeHtml(member.name) + ' ist ein <strong>' + actType + '</strong> in der ' +
             (member.membership_type === 'free' ? 'kostenlosen' : 'bezahlten') + ' Community. ' +
             'Mit ' + totalPosts + ' eigenen Posts und ' + totalComments + ' Kommentaren zeigt ' +
             (total > 10 ? 'hohes' : total > 3 ? 'moderates' : 'geringes') + ' Engagement. ';
-        if (sortedCats.length > 0) {
-            html += 'Hauptinteressen: ' + sortedCats.slice(0, 3).map(function(e) { return e[0]; }).join(', ') + '.';
+        if (sortedTopics.length > 0) {
+            summaryText += 'Erkannte Themen: ' + sortedTopics.slice(0, 5).map(function(e) { return '<strong>' + e[0] + '</strong> (' + e[1] + 'x)'; }).join(', ') + '. ';
         }
-        html += '</p>';
+        if (sortedCats.length > 0) {
+            summaryText += 'Aktiv in Kategorien: ' + sortedCats.slice(0, 3).map(function(e) { return e[0]; }).join(', ') + '.';
+        }
+        html += '<p class="vita-summary">' + summaryText + '</p>';
         html += '<button class="btn btn-primary btn-sm" onclick="exportAIProfile(' + memberId + ')">🤖 AI-Profil als JSON exportieren</button>';
         html += '</div>';
 
@@ -953,6 +1133,174 @@ async function loadVita(memberId) {
     } catch (err) {
         container.innerHTML = '<div class="empty-state"><p>Fehler: ' + escapeHtml(err.message) + '</p></div>';
     }
+}
+
+// ─── Connections (Verbindungen) ──────────
+async function loadConnections(memberId) {
+    var container = $('connections-content');
+    if (!container) return;
+
+    try {
+        container.innerHTML = '<div class="empty-state"><p>Verbindungen werden berechnet...</p></div>';
+
+        // Load member info
+        var mRes = await sb.from('members').select('id, name, skool_username').eq('id', memberId).single();
+        var member = mRes.data;
+
+        // Load this member's own posts
+        var pRes = await sb.from('posts').select('id, post_title, member_id').eq('member_id', memberId);
+        var myPostIds = (pRes.data || []).map(function(p) { return p.id; });
+
+        // 1. WHO COMMENTS ON MY POSTS? (comments by others on this member's posts)
+        var commentersOnMyPosts = {};
+        if (myPostIds.length > 0) {
+            // Supabase .in() has a limit, batch if needed
+            var batchSize = 100;
+            for (var i = 0; i < myPostIds.length; i += batchSize) {
+                var batch = myPostIds.slice(i, i + batchSize);
+                var cRes = await sb.from('post_comments')
+                    .select('author_name, author_username, member_id, likes')
+                    .in('post_id', batch);
+                (cRes.data || []).forEach(function(c) {
+                    // Skip self-comments
+                    if (c.member_id && c.member_id == memberId) return;
+                    var key = c.author_username || c.author_name || 'Unbekannt';
+                    if (!commentersOnMyPosts[key]) {
+                        commentersOnMyPosts[key] = { name: c.author_name || key, username: key, member_id: c.member_id, count: 0, likes: 0 };
+                    }
+                    commentersOnMyPosts[key].count++;
+                    commentersOnMyPosts[key].likes += (c.likes || 0);
+                    if (c.member_id && !commentersOnMyPosts[key].member_id) commentersOnMyPosts[key].member_id = c.member_id;
+                });
+            }
+        }
+
+        // 2. WHOSE POSTS DO I COMMENT ON? (my comments on others' posts)
+        var myCommentsRes = await sb.from('post_comments')
+            .select('post_id, likes, posts(member_id, author_name, author_username)')
+            .eq('member_id', memberId);
+        var iCommentOn = {};
+        (myCommentsRes.data || []).forEach(function(c) {
+            var post = c.posts || {};
+            // Skip comments on own posts
+            if (post.member_id && post.member_id == memberId) return;
+            var key = post.author_username || post.author_name || 'Unbekannt';
+            if (!iCommentOn[key]) {
+                iCommentOn[key] = { name: post.author_name || key, username: key, member_id: post.member_id, count: 0, likes: 0 };
+            }
+            iCommentOn[key].count++;
+            iCommentOn[key].likes += (c.likes || 0);
+        });
+
+        // 3. SHARED DISCUSSIONS (other members who commented on the same posts)
+        var myCommentedPostIds = [];
+        (myCommentsRes.data || []).forEach(function(c) {
+            if (c.post_id && myCommentedPostIds.indexOf(c.post_id) === -1) myCommentedPostIds.push(c.post_id);
+        });
+        var sharedDiscussions = {};
+        if (myCommentedPostIds.length > 0) {
+            for (var j = 0; j < myCommentedPostIds.length; j += batchSize) {
+                var batch2 = myCommentedPostIds.slice(j, j + batchSize);
+                var sdRes = await sb.from('post_comments')
+                    .select('author_name, author_username, member_id')
+                    .in('post_id', batch2);
+                (sdRes.data || []).forEach(function(c) {
+                    if (c.member_id && c.member_id == memberId) return;
+                    var key = c.author_username || c.author_name || 'Unbekannt';
+                    if (!sharedDiscussions[key]) {
+                        sharedDiscussions[key] = { name: c.author_name || key, username: key, member_id: c.member_id, count: 0 };
+                    }
+                    sharedDiscussions[key].count++;
+                    if (c.member_id && !sharedDiscussions[key].member_id) sharedDiscussions[key].member_id = c.member_id;
+                });
+            }
+        }
+
+        // Sort each list by count descending
+        var sortedCommenters = Object.values(commentersOnMyPosts).sort(function(a, b) { return b.count - a.count; }).slice(0, 10);
+        var sortedICommentOn = Object.values(iCommentOn).sort(function(a, b) { return b.count - a.count; }).slice(0, 10);
+        var sortedShared = Object.values(sharedDiscussions).sort(function(a, b) { return b.count - a.count; }).slice(0, 10);
+
+        // Total unique connections
+        var allKeys = {};
+        Object.keys(commentersOnMyPosts).forEach(function(k) { allKeys[k] = true; });
+        Object.keys(iCommentOn).forEach(function(k) { allKeys[k] = true; });
+        var totalUniqueConnections = Object.keys(allKeys).length;
+        var totalInteractions = sortedCommenters.reduce(function(s, c) { return s + c.count; }, 0) + sortedICommentOn.reduce(function(s, c) { return s + c.count; }, 0);
+
+        // Build HTML
+        var html = '';
+
+        // Stats row
+        html += '<div class="connections-stats-row">';
+        html += '<div class="conn-stat"><div class="conn-stat-number">' + totalUniqueConnections + '</div><div class="conn-stat-label">Verbindungen</div></div>';
+        html += '<div class="conn-stat"><div class="conn-stat-number">' + totalInteractions + '</div><div class="conn-stat-label">Interaktionen</div></div>';
+        html += '<div class="conn-stat"><div class="conn-stat-number">' + myCommentedPostIds.length + '</div><div class="conn-stat-label">Diskussionen</div></div>';
+        html += '</div>';
+
+        // Section 1 — Who comments on my posts
+        html += renderConnectionSection(
+            '🔵 Kommentieren auf seine Posts',
+            'Wer kommentiert am meisten auf Posts von ' + escapeHtml(member.name) + '?',
+            sortedCommenters, 'blue'
+        );
+
+        // Section 2 — Whose posts I comment on
+        html += renderConnectionSection(
+            '🟢 Er kommentiert bei',
+            'Auf wessen Posts kommentiert ' + escapeHtml(member.name) + ' am meisten?',
+            sortedICommentOn, 'green'
+        );
+
+        // Section 3 — Shared discussions
+        html += renderConnectionSection(
+            '🟣 Gemeinsame Diskussionen',
+            'Mitglieder, die auf denselben Posts aktiv sind',
+            sortedShared, 'purple'
+        );
+
+        if (totalUniqueConnections === 0) {
+            html = '<div class="connections-empty"><p>Noch keine Verbindungen gefunden. Verbindungen werden aus Kommentaren und Posts berechnet.</p></div>';
+        }
+
+        container.innerHTML = html;
+    } catch (err) {
+        container.innerHTML = '<div class="empty-state"><p>Fehler: ' + escapeHtml(err.message) + '</p></div>';
+    }
+}
+
+function renderConnectionSection(title, subtitle, items, color) {
+    if (!items || items.length === 0) {
+        return '<div class="connections-section"><h4>' + title + '</h4>' +
+            '<div class="connections-subtitle">' + subtitle + '</div>' +
+            '<div class="connections-empty">Keine Daten vorhanden</div></div>';
+    }
+    var maxCount = items[0].count || 1;
+    var html = '<div class="connections-section">';
+    html += '<h4>' + title + '</h4>';
+    html += '<div class="connections-subtitle">' + subtitle + '</div>';
+    html += '<div class="connection-list">';
+    items.forEach(function(item) {
+        var pct = Math.round((item.count / maxCount) * 100);
+        var clickAttr = item.member_id ? ' onclick="location.hash=\'member/' + item.member_id + '\';"' : '';
+        var cursorStyle = item.member_id ? '' : ' style="cursor:default"';
+        html += '<div class="connection-item"' + clickAttr + cursorStyle + '>';
+        html += '<div class="connection-avatar" style="background:' + avatarColor(item.name) + '">' + initials(item.name) + '</div>';
+        html += '<div class="connection-info">';
+        html += '<span class="connection-name">' + escapeHtml(item.name) + '</span>';
+        var metaParts = [];
+        if (item.username && item.username !== item.name) metaParts.push('@' + escapeHtml(item.username));
+        if (item.likes > 0) metaParts.push('👍 ' + item.likes + ' Likes');
+        if (metaParts.length > 0) html += '<span class="connection-meta">' + metaParts.join(' · ') + '</span>';
+        html += '</div>';
+        html += '<div class="connection-stats">';
+        html += '<div class="connection-bar-track"><div class="connection-bar-fill connection-bar-fill-' + color + '" style="width:' + pct + '%"></div></div>';
+        html += '<span class="connection-count">' + item.count + '</span>';
+        html += '</div>';
+        html += '</div>';
+    });
+    html += '</div></div>';
+    return html;
 }
 
 // ─── Kanban ──────────────────────────────
@@ -1819,6 +2167,9 @@ document.addEventListener('DOMContentLoaded', () => {
             $(`tab-${tab.dataset.tab}`).classList.add('active');
             if (tab.dataset.tab === 'vita' && currentMemberId) {
                 loadVita(currentMemberId);
+            }
+            if (tab.dataset.tab === 'connections' && currentMemberId) {
+                loadConnections(currentMemberId);
             }
         });
     });
