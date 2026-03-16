@@ -478,7 +478,8 @@ function renderMembersTable(members) {
     `).join('');
 }
 
-// ─── Member Detail ───────────────────────
+// ─── Member Detail ─────────────────────
+var cachedMemberIds = [];
 async function loadMemberDetail(id) {
     if (!id) return;
     currentMemberId = parseInt(id);
@@ -491,11 +492,35 @@ async function loadMemberDetail(id) {
         // Load labels
         const { data: labels } = await sb.from('member_labels').select('label').eq('member_id', id);
         member.custom_labels = (labels || []).map(l => l.label);
+        // Cache member IDs for prev/next navigation
+        if (cachedMemberIds.length === 0) {
+            var idRes = await sb.from('members').select('id').order('name');
+            cachedMemberIds = (idRes.data || []).map(function(m) { return m.id; });
+        }
         renderMemberDetail(member);
+        renderMemberNav();
         loadTimeline(id);
     } catch (err) {
         toast(err.message, 'error');
     }
+}
+
+function renderMemberNav() {
+    var navCounter = $('member-nav-counter');
+    if (!navCounter) return;
+    var idx = cachedMemberIds.indexOf(currentMemberId);
+    var total = cachedMemberIds.length;
+    navCounter.textContent = (idx >= 0 ? (idx + 1) : '?') + ' / ' + total;
+}
+
+function navigateMember(direction) {
+    if (cachedMemberIds.length === 0) return;
+    var idx = cachedMemberIds.indexOf(currentMemberId);
+    if (idx === -1) return;
+    var newIdx = idx + direction;
+    if (newIdx < 0) newIdx = cachedMemberIds.length - 1;
+    if (newIdx >= cachedMemberIds.length) newIdx = 0;
+    location.hash = 'member/' + cachedMemberIds[newIdx];
 }
 
 function renderMemberDetail(m) {
@@ -505,13 +530,20 @@ function renderMemberDetail(m) {
     $('detail-name').textContent = m.name;
     $('detail-username').textContent = m.skool_username || '';
 
-    // Badges
+    // Badges (removed membership badge from here - now shown prominently at top)
     $('detail-badges').innerHTML = `
-        ${membershipBadge(m.membership_type)}
         ${statusBadge(m.activity_status)}
         ${m.is_premium ? '<span class="badge badge-purple">Premium</span>' : ''}
         ${m.is_admin ? '<span class="badge badge-gold">Admin</span>' : ''}
     `;
+
+    // Prominent membership type at top
+    var mtEl = $('detail-membership-type');
+    if (mtEl) {
+        var mLabel = m.membership_type === 'free' ? '🟡 FREE COMMUNITY' : '🔵 BEZAHLTE COMMUNITY';
+        var mColor = m.membership_type === 'free' ? '#f59e0b' : '#3b82f6';
+        mtEl.innerHTML = '<span style="font-size:14px;font-weight:700;color:' + mColor + ';letter-spacing:1px">' + mLabel + '</span>';
+    }
 
     // Build funnel/assigned selectors
     const funnelOptions = ['', 'free_community', 'recently_cancelled', 'long_cancelled']
@@ -519,9 +551,8 @@ function renderMemberDetail(m) {
     const assignedOptions = ['<option value="">— Niemand —</option>']
         .concat(allUsers.map(u => `<option value="${u.id}" ${m.assigned_to == u.id ? 'selected' : ''}>${escapeHtml(u.display_name)}</option>`)).join('');
 
-    // Fields
+    // Fields (removed Mitgliedschaft - now shown at top)
     $('detail-fields').innerHTML = `
-        <div class="field-row"><span class="field-label">Mitgliedschaft</span><span class="field-value">${membershipLabel(m.membership_type)}</span></div>
         <div class="field-row"><span class="field-label">Status</span><span class="field-value">${m.membership_status || '—'}</span></div>
         <div class="field-row"><span class="field-label">Aktivität</span><span class="field-value">${m.activity_status || '—'}</span></div>
         <div class="field-row"><span class="field-label">Level</span><span class="field-value">${levelLabel(m.progress_level)}</span></div>
@@ -938,36 +969,54 @@ async function loadVita(memberId) {
             'Freelancing & Agentur': ['freelanc', 'agentur', 'selbst', 'freiberuf', 'auftraeg', 'auftrag', 'kunde', 'projekt', 'dienstleist']
         };
 
-        // Collect all text for analysis
-        var allTexts = [];
+        // Collect all text items WITH labels for source tracking
+        var textItems = [];
         comments.forEach(function(c) {
-            if (c.comment_text) allTexts.push(c.comment_text);
-            if (c.posts && c.posts.post_title) allTexts.push(c.posts.post_title);
-            if (c.posts && c.posts.post_content) allTexts.push(c.posts.post_content);
+            if (c.comment_text) textItems.push({ text: c.comment_text, label: 'Kommentar', context: (c.posts && c.posts.post_title) ? 'auf "' + c.posts.post_title + '"' : '' });
+            if (c.posts && c.posts.post_content) textItems.push({ text: c.posts.post_content, label: 'Post-Inhalt', context: c.posts.post_title || '' });
         });
         posts.forEach(function(p) {
-            if (p.post_title) allTexts.push(p.post_title);
-            if (p.post_content) allTexts.push(p.post_content);
+            if (p.post_title) textItems.push({ text: p.post_title, label: 'Eigener Post', context: '' });
+            if (p.post_content) textItems.push({ text: p.post_content, label: 'Eigener Post-Inhalt', context: p.post_title || '' });
         });
         timeline.forEach(function(e) {
-            if (e.content) allTexts.push(e.content);
+            if (e.content) textItems.push({ text: e.content, label: 'Notiz (' + (e.entry_type || 'note') + ')', context: '' });
         });
 
+        var allTexts = textItems.map(function(t) { return t.text; });
         var combinedText = allTexts.join(' ').toLowerCase();
 
-        // Score each topic
+        // Score each topic AND collect sources
         var topicScores = {};
+        var topicSources = {};
         Object.keys(topicKeywords).forEach(function(topic) {
             var score = 0;
+            var sources = [];
             topicKeywords[topic].forEach(function(kw) {
-                var idx = 0;
-                var lower = combinedText;
-                while ((idx = lower.indexOf(kw, idx)) !== -1) {
-                    score++;
-                    idx += kw.length;
-                }
+                textItems.forEach(function(item) {
+                    if (item.text.toLowerCase().indexOf(kw) !== -1) {
+                        score++;
+                        // Add source (limit snippet to 120 chars around the keyword)
+                        var lowerText = item.text.toLowerCase();
+                        var pos = lowerText.indexOf(kw);
+                        var start = Math.max(0, pos - 40);
+                        var end = Math.min(item.text.length, pos + kw.length + 80);
+                        var snippet = (start > 0 ? '...' : '') + item.text.substring(start, end) + (end < item.text.length ? '...' : '');
+                        sources.push({ label: item.label, context: item.context, snippet: snippet, keyword: kw });
+                    }
+                });
             });
-            if (score > 0) topicScores[topic] = score;
+            if (score > 0) {
+                topicScores[topic] = score;
+                // Deduplicate sources by snippet
+                var seen = {};
+                topicSources[topic] = sources.filter(function(s) {
+                    var key = s.snippet.substring(0, 60);
+                    if (seen[key]) return false;
+                    seen[key] = true;
+                    return true;
+                }).slice(0, 10); // max 10 sources per topic
+            }
         });
         var sortedTopics = Object.entries(topicScores).sort(function(a, b) { return b[1] - a[1]; });
 
@@ -1027,20 +1076,39 @@ async function loadVita(memberId) {
         }
         html += '</div></div>';
 
-        // ── TOPIC ANALYSIS (new!) ──
+        // ── TOPIC ANALYSIS with clickable sources ──
         if (sortedTopics.length > 0) {
             html += '<div class="vita-card">';
             html += '<h4>🔍 Themenanalyse (aus Inhalten erkannt)</h4>';
-            html += '<p style="font-size:12px;color:var(--text-muted);margin:0 0 10px 0">Basierend auf ' + allTexts.length + ' analysierten Texten (Posts, Kommentare, Notizen)</p>';
+            html += '<p style="font-size:12px;color:var(--text-muted);margin:0 0 10px 0">Basierend auf ' + allTexts.length + ' analysierten Texten — <strong>Klick auf ein Thema fuer Quellen</strong></p>';
             html += '<div class="vita-interests">';
             var topMax = sortedTopics[0] ? sortedTopics[0][1] : 1;
-            sortedTopics.forEach(function(entry) {
+            sortedTopics.forEach(function(entry, idx) {
+                var topicName = entry[0];
                 var pct = Math.round((entry[1] / topMax) * 100);
                 var color = pct > 70 ? '#10b981' : pct > 40 ? '#3b82f6' : '#8b5cf6';
-                html += '<div class="vita-interest">';
-                html += '<span class="vita-interest-name">' + escapeHtml(entry[0]) + '</span>';
+                var panelId = 'topic-sources-' + idx;
+                html += '<div class="vita-topic-row">';
+                html += '<div class="vita-interest vita-interest-clickable" onclick="document.getElementById(\'' + panelId + '\').classList.toggle(\'open\')" style="cursor:pointer">';
+                html += '<span class="vita-interest-name">' + escapeHtml(topicName) + ' <span style="font-size:10px;color:var(--text-muted)">▼</span></span>';
                 html += '<div class="vita-interest-bar"><div class="vita-interest-fill" style="width:' + pct + '%;background:' + color + '"></div></div>';
                 html += '<span class="vita-interest-count">' + entry[1] + 'x</span>';
+                html += '</div>';
+                // Sources panel (hidden by default)
+                var sources = topicSources[topicName] || [];
+                html += '<div class="vita-topic-sources" id="' + panelId + '">';
+                if (sources.length > 0) {
+                    sources.forEach(function(s) {
+                        html += '<div class="vita-source-item">';
+                        html += '<span class="vita-source-label">' + escapeHtml(s.label) + '</span>';
+                        if (s.context) html += ' <span style="font-size:11px;color:var(--text-muted)">' + escapeHtml(s.context) + '</span>';
+                        html += '<div class="vita-source-snippet">"' + escapeHtml(s.snippet) + '"</div>';
+                        html += '</div>';
+                    });
+                } else {
+                    html += '<p style="font-size:12px;color:var(--text-muted);margin:4px 0">Keine Quellen verfuegbar</p>';
+                }
+                html += '</div>';
                 html += '</div>';
             });
             html += '</div></div>';
@@ -2179,6 +2247,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (currentMemberId) exportAIProfile(currentMemberId);
         else toast('Kein Mitglied ausgewaehlt', 'error');
     });
+
+    // Prev/Next member navigation
+    $('btn-prev-member').addEventListener('click', function() { navigateMember(-1); });
+    $('btn-next-member').addEventListener('click', function() { navigateMember(1); });
 
     // Team messages
     $('btn-send-team-msg').addEventListener('click', sendTeamMessage);
