@@ -431,7 +431,7 @@ async function loadMembers() {
         if (status) query = query.eq('activity_status', status);
         if (membership) query = query.eq('membership_type', membership);
         if (level) query = query.eq('progress_level', level);
-        query = query.order(sortCol, { ascending: sortDir === 'asc' });
+        query = query.order(sortCol, { ascending: sortDir === 'asc' }).range(0, 9999);
 
         const { data, error } = await query;
         if (error) throw error;
@@ -1015,7 +1015,7 @@ async function loadVita(memberId) {
                     if (seen[key]) return false;
                     seen[key] = true;
                     return true;
-                }).slice(0, 10); // max 10 sources per topic
+                }).slice(0, 30); // show up to 30 sources per topic
             }
         });
         var sortedTopics = Object.entries(topicScores).sort(function(a, b) { return b[1] - a[1]; });
