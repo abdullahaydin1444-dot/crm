@@ -1873,3 +1873,21 @@ a:hover { text-decoration: underline; }
     font-size: 13px; font-weight: 600; color: var(--text-secondary, #94a3b8);
     margin: 0 0 10px 0;
 }
+
+/* ═══ Vita Top Interessen ═══ */
+.vita-top-interests { border: 1px solid rgba(245,158,11,0.2); background: rgba(245,158,11,0.03); }
+.vita-top-interests h4 { color: #f59e0b; }
+.vita-top-interests-grid { display: flex; flex-direction: column; gap: 10px; }
+.vita-top-interest-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px; border-radius: 8px;
+    background: var(--bg-primary, #0d1017);
+    border: 1px solid var(--border-light, #2a2f3a);
+    transition: transform 0.15s;
+}
+.vita-top-interest-item:hover { transform: translateX(4px); }
+.vita-top-rank { font-size: 22px; line-height: 1; }
+.vita-top-emoji { font-size: 24px; line-height: 1; }
+.vita-top-info { flex: 1; }
+.vita-top-name { display: block; font-size: 14px; font-weight: 600; color: var(--text-primary, #e2e8f0); }
+.vita-top-count { display: block; font-size: 11px; color: var(--text-muted, #64748b); margin-top: 2px; }

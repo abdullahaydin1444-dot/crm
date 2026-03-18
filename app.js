@@ -346,6 +346,36 @@ async function loadDashboard() {
         } else {
             $('chart-level-premium').innerHTML = '<p class="text-muted" style="font-size:0.85rem">Noch keine Daten</p>';
         }
+
+        // ── Trending Topics (from all members' top_topics) ──
+        var topicCounts = {};
+        all.forEach(function(m) {
+            if (m.top_topics && m.top_topics.length > 0) {
+                m.top_topics.forEach(function(t) {
+                    topicCounts[t] = (topicCounts[t] || 0) + 1;
+                });
+            }
+        });
+        if (Object.keys(topicCounts).length > 0) {
+            // Sort and take top 10
+            var sortedTrending = Object.entries(topicCounts).sort(function(a, b) { return b[1] - a[1]; }).slice(0, 10);
+            var trendObj = {};
+            sortedTrending.forEach(function(t) { trendObj[t[0]] = t[1]; });
+            renderBarChart($('chart-trending-topics'), trendObj, '#f59e0b');
+        } else {
+            $('chart-trending-topics').innerHTML = '<p class="text-muted" style="font-size:0.85rem">Themen werden beim Besuch der Mitglieder-Vita berechnet</p>';
+        }
+
+        // ── Engagement Distribution ──
+        var engDist = { '🔥 Expert (50+)': 0, '⚡ Fortgeschritten (20-49)': 0, '✨ Intermediate (5-19)': 0, '💤 Anfänger (0-4)': 0 };
+        all.forEach(function(m) {
+            var s = m.engagement_score || 0;
+            if (s >= 50) engDist['🔥 Expert (50+)']++;
+            else if (s >= 20) engDist['⚡ Fortgeschritten (20-49)']++;
+            else if (s >= 5) engDist['✨ Intermediate (5-19)']++;
+            else engDist['💤 Anfänger (0-4)']++;
+        });
+        renderBarChart($('chart-engagement-dist'), engDist, '#8b5cf6');
     } catch (err) {
         toast(err.message, 'error');
     }
@@ -1308,13 +1338,37 @@ async function loadVita(memberId) {
         // ══════ BUILD HTML ══════
         var html = '';
 
-        // Stats Grid
+        // Stats Grid (5 stats)
         html += '<div class="vita-stats-grid">';
         html += '<div class="vita-stat"><div class="vita-stat-number">' + totalPosts + '</div><div class="vita-stat-label">Eigene Posts</div></div>';
         html += '<div class="vita-stat"><div class="vita-stat-number">' + totalComments + '</div><div class="vita-stat-label">Kommentare</div></div>';
         html += '<div class="vita-stat"><div class="vita-stat-number">' + totalLikesReceived + '</div><div class="vita-stat-label">Likes erhalten</div></div>';
+        html += '<div class="vita-stat"><div class="vita-stat-number">' + totalLikesGiven + '</div><div class="vita-stat-label">Likes verteilt</div></div>';
         html += '<div class="vita-stat"><div class="vita-stat-number" style="color:' + engColor + '">' + engLevel + '</div><div class="vita-stat-label">Engagement</div></div>';
         html += '</div>';
+
+        // ── TOP 3 INTERESSEN (prominent card) ──
+        var topicEmojis = { 'Datenschutz & DSGVO': '🔒', 'KI & Automatisierung': '🤖', 'Marketing & Vertrieb': '📈', 'Social Media': '📱', 'Technik & Entwicklung': '💻', 'Business & Strategie': '🎯', 'Community & Networking': '🤝', 'E-Mail & Newsletter': '📧', 'SEO & Website': '🔍', 'Finanzen & Investition': '💰', 'Coaching & Beratung': '🎓', 'Mindset & Motivation': '🧠', 'Design & Kreativitaet': '🎨', 'Tools & Software': '🛠️', 'Freelancing & Agentur': '💼' };
+        var top3 = sortedTopics.slice(0, 3);
+        if (top3.length > 0) {
+            html += '<div class="vita-card vita-top-interests">';
+            html += '<h4>⭐ Top Interessen</h4>';
+            html += '<div class="vita-top-interests-grid">';
+            top3.forEach(function(entry, i) {
+                var emoji = topicEmojis[entry[0]] || '📌';
+                var rank = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
+                html += '<div class="vita-top-interest-item">';
+                html += '<span class="vita-top-rank">' + rank + '</span>';
+                html += '<span class="vita-top-emoji">' + emoji + '</span>';
+                html += '<div class="vita-top-info"><span class="vita-top-name">' + escapeHtml(entry[0]) + '</span><span class="vita-top-count">' + entry[1] + ' Erwähnungen</span></div>';
+                html += '</div>';
+            });
+            html += '</div></div>';
+
+            // Save top 3 topics to DB (async, fire-and-forget)
+            var topTopicNames = top3.map(function(t) { return t[0]; });
+            sb.from('members').update({ top_topics: topTopicNames }).eq('id', memberId).then(function() {});
+        }
 
         // Personality card
         html += '<div class="vita-card">';
