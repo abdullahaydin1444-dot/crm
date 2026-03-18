@@ -254,9 +254,18 @@ async function loadDashboard() {
         var countRes = await sb.from('members').select('*', { count: 'exact', head: true });
         var totalCount = countRes.count || 0;
 
-        const { data: members, error } = await sb.from('members').select('*').range(0, 4999);
-        if (error) throw error;
-        const all = members || [];
+        // Paginated fetch to bypass 1000-row default limit
+        var all = [];
+        var offset = 0;
+        var batchSize = 1000;
+        while (true) {
+            var batchRes = await sb.from('members').select('*').range(offset, offset + batchSize - 1);
+            if (batchRes.error) throw batchRes.error;
+            var batch = batchRes.data || [];
+            all = all.concat(batch);
+            if (batch.length < batchSize) break;
+            offset += batchSize;
+        }
         const paying = all.filter(m => m.membership_type && m.membership_type !== 'free');
         const atRisk = all.filter(m => m.activity_status === 'at_risk');
         const revenue = all.reduce((sum, m) => {
