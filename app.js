@@ -89,7 +89,7 @@ function relativeTime(d) {
 }
 
 function membershipLabel(type) {
-    const labels = { free: 'Free', monthly_97: 'Monatlich (97€)', yearly_697: 'Jährlich (697€)' };
+    const labels = { free: 'Free', monthly_97: 'Monatlich (97€)', monthly_70: 'Monatlich (70€)', monthly_40: 'Monatlich (40€)', yearly_697: 'Jährlich (697€)', yearly_670: 'Jährlich (670€)', yearly_385: 'Jährlich (385€)' };
     return labels[type] || type || '—';
 }
 
@@ -270,7 +270,11 @@ async function loadDashboard() {
         const atRisk = all.filter(m => m.activity_status === 'at_risk');
         const revenue = all.reduce((sum, m) => {
             if (m.membership_type === 'monthly_97') return sum + 97;
+            if (m.membership_type === 'monthly_70') return sum + 70;
+            if (m.membership_type === 'monthly_40') return sum + 40;
             if (m.membership_type === 'yearly_697') return sum + Math.round(697 / 12);
+            if (m.membership_type === 'yearly_670') return sum + Math.round(670 / 12);
+            if (m.membership_type === 'yearly_385') return sum + Math.round(385 / 12);
             return sum;
         }, 0);
 
