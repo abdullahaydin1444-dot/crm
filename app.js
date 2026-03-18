@@ -19,6 +19,13 @@ let sortCol = 'name';
 let sortDir = 'asc';
 let unreadCount = 0;
 let pollTimer = null;
+let currentPage = 0;
+let pageSize = 50;
+let totalMembers = 0;
+let selectedMemberIds = new Set();
+let kanbanSearchTerm = '';
+let kanbanAcqFilter = '';
+let dashboardTimeFilter = 'all';
 
 // ─── Toast ───────────────────────────────
 function toast(message, type = 'info') {
@@ -264,8 +271,11 @@ async function loadDashboard() {
         $('stat-atrisk').textContent = atRisk.length;
 
         // Funnel overview
+        // Separate query for accurate funnel counts (not limited by range)
+        var funnelRes = await sb.from('members').select('funnel_stage').not('funnel_stage', 'is', null);
+        var funnelData = funnelRes.data || [];
         const byFunnel = { free_community: 0, recently_cancelled: 0, long_cancelled: 0 };
-        all.forEach(m => { if (m.funnel_stage && byFunnel[m.funnel_stage] !== undefined) byFunnel[m.funnel_stage]++; });
+        funnelData.forEach(m => { if (byFunnel[m.funnel_stage] !== undefined) byFunnel[m.funnel_stage]++; });
         const funnelEl = $('funnel-overview');
         funnelEl.innerHTML = `
             <div class="funnel-card" style="background: var(--accent-blue-dim)">
@@ -285,13 +295,60 @@ async function loadDashboard() {
         await loadActivityFeed();
         await loadTeamNotifications();
 
-        // Charts (removed city chart — replaced by Team-Benachrichtigungen)
-        const byMembership = {}; all.forEach(m => { const k = m.membership_type || 'free'; byMembership[membershipLabel(k)] = (byMembership[membershipLabel(k)] || 0) + 1; });
-        const byLevel = {}; all.forEach(m => { const k = m.progress_level || 'beginner'; byLevel[levelLabel(k)] = (byLevel[levelLabel(k)] || 0) + 1; });
-        renderBarChart($('chart-membership'), byMembership, 'var(--accent-purple)');
-        renderBarChart($('chart-level'), byLevel, 'var(--accent-green)');
+        // ── Community Cards: Free vs Premium ──
+        var freeMembers = all.filter(m => m.membership_type === 'free' || !m.membership_type);
+        var premiumMembers = all.filter(m => m.membership_type && m.membership_type !== 'free');
+
+        // Free community stats
+        $('free-members').textContent = freeMembers.length;
+        var freeMemberIds = freeMembers.map(m => m.id);
+        var freePostCount = 0, freeCommentCount = 0, freeLikeCount = 0;
+        freeMembers.forEach(function(m) {
+            freePostCount += (m.post_count || 0);
+            freeCommentCount += (m.comment_count || 0);
+            freeLikeCount += (m.engagement_score || 0);
+        });
+        $('free-posts').textContent = freePostCount;
+        $('free-comments').textContent = freeCommentCount;
+        $('free-likes').textContent = freeLikeCount;
+
+        // Free level distribution
+        var freeLevels = {};
+        freeMembers.forEach(function(m) { var k = levelLabel(m.progress_level || 'beginner'); freeLevels[k] = (freeLevels[k] || 0) + 1; });
+        renderBarChart($('chart-level-free'), freeLevels, '#f59e0b');
+
+        // Premium community stats
+        $('premium-members').textContent = premiumMembers.length;
+        var premPostCount = 0, premCommentCount = 0, premLikeCount = 0;
+        premiumMembers.forEach(function(m) {
+            premPostCount += (m.post_count || 0);
+            premCommentCount += (m.comment_count || 0);
+            premLikeCount += (m.engagement_score || 0);
+        });
+        $('premium-posts').textContent = premPostCount;
+        $('premium-comments').textContent = premCommentCount;
+        $('premium-likes').textContent = premLikeCount;
+
+        // Premium level distribution
+        var premLevels = {};
+        premiumMembers.forEach(function(m) { var k = levelLabel(m.progress_level || 'beginner'); premLevels[k] = (premLevels[k] || 0) + 1; });
+        if (Object.keys(premLevels).length > 0) {
+            renderBarChart($('chart-level-premium'), premLevels, '#3b82f6');
+        } else {
+            $('chart-level-premium').innerHTML = '<p class="text-muted" style="font-size:0.85rem">Noch keine Daten</p>';
+        }
     } catch (err) {
         toast(err.message, 'error');
+    }
+}
+
+function getTimeFilterDate() {
+    var now = new Date();
+    switch (dashboardTimeFilter) {
+        case 'week': now.setDate(now.getDate() - 7); return now.toISOString();
+        case 'month': now.setMonth(now.getMonth() - 1); return now.toISOString();
+        case '30days': now.setDate(now.getDate() - 30); return now.toISOString();
+        default: return null;
     }
 }
 
@@ -306,29 +363,94 @@ function mapObj(obj, fn) {
 async function loadMyTasks() {
     const tasksEl = $('my-tasks');
     try {
-        const { data, error } = await sb.from('members').select('id, name, activity_status, membership_type, funnel_stage').eq('assigned_to', currentUser.id).in('activity_status', ['at_risk', 'inactive']).order('name').limit(8);
-        if (error) throw error;
-        if (!data || data.length === 0) {
+        // Try crm_tasks first, fallback to member-based tasks
+        var { data: tasks, error: tErr } = await sb.from('crm_tasks').select('*, member:member_id(name)').eq('assigned_to', currentUser.id).eq('status', 'open').order('due_date', { ascending: true, nullsFirst: false }).limit(10);
+        if (tErr) {
+            // crm_tasks table may not exist yet, fallback
+            var { data, error } = await sb.from('members').select('id, name, activity_status, membership_type, funnel_stage').eq('assigned_to', currentUser.id).in('activity_status', ['at_risk', 'inactive']).order('name').limit(8);
+            if (error) throw error;
+            if (!data || data.length === 0) {
+                tasksEl.innerHTML = '<p class="text-muted" style="padding:12px;font-size:0.85rem">Keine offenen Aufgaben</p>';
+                return;
+            }
+            tasksEl.innerHTML = data.map(m => `
+                <div class="task-item" onclick="location.hash='member/${m.id}'">
+                    <div class="task-avatar" style="background:${avatarColor(m.name)}">${initials(m.name)}</div>
+                    <div class="task-info">
+                        <div class="task-name">${escapeHtml(m.name)}</div>
+                        <div class="task-meta">${membershipLabel(m.membership_type)} · ${funnelLabel(m.funnel_stage)}</div>
+                    </div>
+                    ${statusBadge(m.activity_status)}
+                </div>
+            `).join('');
+            return;
+        }
+        if (!tasks || tasks.length === 0) {
             tasksEl.innerHTML = '<p class="text-muted" style="padding:12px;font-size:0.85rem">Keine offenen Aufgaben</p>';
             return;
         }
-        tasksEl.innerHTML = data.map(m => `
-            <div class="task-item" onclick="location.hash='member/${m.id}'">
-                <div class="task-avatar" style="background:${avatarColor(m.name)}">${initials(m.name)}</div>
-                <div class="task-info">
-                    <div class="task-name">${escapeHtml(m.name)}</div>
-                    <div class="task-meta">${membershipLabel(m.membership_type)} · ${funnelLabel(m.funnel_stage)}</div>
-                </div>
-                ${statusBadge(m.activity_status)}
-            </div>
-        `).join('');
+        tasksEl.innerHTML = tasks.map(function(t) {
+            var memberLink = t.member && t.member.name ? '<span class="task-meta">' + escapeHtml(t.member.name) + '</span>' : '';
+            var dueMeta = t.due_date ? formatDate(t.due_date) : 'Kein Fälligkeitsdatum';
+            return '<div class="task-item">' +
+                '<input type="checkbox" onclick="event.stopPropagation();completeTask(' + t.id + ')" style="margin-right:8px;cursor:pointer">' +
+                '<div class="task-info">' +
+                '<div class="task-name">' + escapeHtml(t.title) + '</div>' +
+                '<div class="task-meta">' + dueMeta + (memberLink ? ' · ' + memberLink : '') + '</div>' +
+                '</div></div>';
+        }).join('');
     } catch { tasksEl.innerHTML = '<p class="text-muted" style="padding:12px;font-size:0.85rem">Fehler beim Laden</p>'; }
+}
+
+async function completeTask(taskId) {
+    try {
+        var { error } = await sb.from('crm_tasks').update({ status: 'done' }).eq('id', taskId);
+        if (error) throw error;
+        toast('Aufgabe erledigt', 'success');
+        loadMyTasks();
+    } catch (err) { toast(err.message, 'error'); }
+}
+
+function openCreateTaskModal() {
+    var memberOptions = allMembers.length > 0
+        ? '<option value="">\u2014 Kein Mitglied \u2014</option>' + allMembers.map(function(m) { return '<option value="' + m.id + '">' + escapeHtml(m.name) + '</option>'; }).join('')
+        : '<option value="">\u2014 Kein Mitglied \u2014</option>';
+    var assignOptions = allUsers.map(function(u) { return '<option value="' + u.id + '"' + (u.id === currentUser.id ? ' selected' : '') + '>' + escapeHtml(u.display_name) + '</option>'; }).join('');
+    var body = '<div class="form-group"><label>Titel</label><input type="text" id="task-title" placeholder="Aufgabe beschreiben..."></div>' +
+        '<div class="form-group"><label>Beschreibung (optional)</label><textarea id="task-desc" rows="3" placeholder="Details..."></textarea></div>' +
+        '<div class="form-row"><div class="form-group"><label>Fälligkeitsdatum</label><input type="date" id="task-due"></div>' +
+        '<div class="form-group"><label>Zugewiesen an</label><select id="task-assigned" class="filter-select">' + assignOptions + '</select></div></div>' +
+        '<div class="form-group"><label>Mitglied-Bezug (optional)</label><select id="task-member" class="filter-select">' + memberOptions + '</select></div>';
+    openModal('Aufgabe erstellen', body, '<button class="btn btn-primary" onclick="createTask()">Erstellen</button>');
+}
+
+async function createTask() {
+    var title = $('task-title').value.trim();
+    if (!title) { toast('Bitte einen Titel eingeben', 'error'); return; }
+    try {
+        var { error } = await sb.from('crm_tasks').insert({
+            title: title,
+            description: $('task-desc').value.trim() || null,
+            due_date: $('task-due').value || null,
+            assigned_to: parseInt($('task-assigned').value),
+            member_id: $('task-member').value ? parseInt($('task-member').value) : null,
+            created_by: currentUser.id,
+            status: 'open'
+        });
+        if (error) throw error;
+        toast('Aufgabe erstellt', 'success');
+        closeModal();
+        loadMyTasks();
+    } catch (err) { toast(err.message, 'error'); }
 }
 
 async function loadActivityFeed() {
     const feedEl = $('activity-feed');
     try {
-        const { data: entries, error } = await sb.from('timeline_entries').select('*, member:members(name)').order('created_at', { ascending: false }).limit(10);
+        var query = sb.from('timeline_entries').select('*, member:members(name)').order('created_at', { ascending: false }).limit(10);
+        var dateFrom = getTimeFilterDate();
+        if (dateFrom) query = query.gte('created_at', dateFrom);
+        const { data: entries, error } = await query;
         if (error) throw error;
         if (!entries || entries.length === 0) {
             feedEl.innerHTML = '<p class="text-muted" style="padding:12px;font-size:0.85rem">Keine Aktivitäten</p>';
@@ -418,6 +540,14 @@ function renderBarChart(container, data, color) {
     `).join('');
 }
 
+function engagementBadge(score) {
+    score = score || 0;
+    if (score >= 50) return '<span class="badge badge-green" title="Posts: ' + score + '">🔥 ' + score + '</span>';
+    if (score >= 20) return '<span class="badge badge-blue" title="Score: ' + score + '">⚡ ' + score + '</span>';
+    if (score >= 5) return '<span class="badge badge-yellow" title="Score: ' + score + '">✨ ' + score + '</span>';
+    return '<span class="badge badge-gray" title="Score: ' + score + '">💤 ' + score + '</span>';
+}
+
 // ─── Members ─────────────────────────────
 async function loadMembers() {
     try {
@@ -426,17 +556,32 @@ async function loadMembers() {
         const membership = $('filter-membership').value;
         const level = $('filter-level').value;
 
+        // Count query for pagination
+        let countQuery = sb.from('members').select('*', { count: 'exact', head: true });
+        if (search) countQuery = countQuery.or(`name.ilike.%${search}%,skool_username.ilike.%${search}%`);
+        if (status) countQuery = countQuery.eq('activity_status', status);
+        if (membership) countQuery = countQuery.eq('membership_type', membership);
+        if (level) countQuery = countQuery.eq('progress_level', level);
+        const { count } = await countQuery;
+        totalMembers = count || 0;
+
+        // Ensure page is within bounds
+        var totalPages = Math.max(1, Math.ceil(totalMembers / pageSize));
+        if (currentPage >= totalPages) currentPage = totalPages - 1;
+        if (currentPage < 0) currentPage = 0;
+
         let query = sb.from('members').select('*');
         if (search) query = query.or(`name.ilike.%${search}%,skool_username.ilike.%${search}%`);
         if (status) query = query.eq('activity_status', status);
         if (membership) query = query.eq('membership_type', membership);
         if (level) query = query.eq('progress_level', level);
-        query = query.order(sortCol, { ascending: sortDir === 'asc' }).range(0, 9999);
+        query = query.order(sortCol, { ascending: sortDir === 'asc' }).range(currentPage * pageSize, (currentPage + 1) * pageSize - 1);
 
         const { data, error } = await query;
         if (error) throw error;
         allMembers = data || [];
         renderMembersTable(allMembers);
+        renderPagination();
     } catch (err) {
         toast(err.message, 'error');
     }
@@ -458,6 +603,9 @@ function renderMembersTable(members) {
 
     tbody.innerHTML = members.map(m => `
         <tr data-id="${m.id}">
+            <td class="bulk-check-cell" onclick="event.stopPropagation()">
+                <input type="checkbox" class="bulk-check" data-id="${m.id}" ${selectedMemberIds.has(m.id) ? 'checked' : ''} onchange="toggleBulkSelect(${m.id}, this.checked)">
+            </td>
             <td>
                 <div class="member-cell">
                     <div class="member-avatar-sm" style="background:${avatarColor(m.name)}">${initials(m.name)}</div>
@@ -470,12 +618,86 @@ function renderMembersTable(members) {
             <td>${membershipBadge(m.membership_type)}</td>
             <td>${statusBadge(m.activity_status)}</td>
             <td><span class="badge badge-gray">${levelLabel(m.progress_level)}</span></td>
+            <td>${engagementBadge(m.engagement_score)}</td>
             <td>${escapeHtml(m.city || '—')}</td>
             <td>${m.funnel_stage ? `<span class="badge badge-blue">${funnelLabel(m.funnel_stage)}</span>` : '—'}</td>
             <td>${escapeHtml(m.assigned_name || '—')}</td>
             <td>${formatDate(m.last_active)}</td>
         </tr>
     `).join('');
+    updateBulkBar();
+}
+
+// ─── Bulk Actions ────────────────────────
+function toggleBulkSelect(id, checked) {
+    if (checked) selectedMemberIds.add(id);
+    else selectedMemberIds.delete(id);
+    updateBulkBar();
+}
+
+function toggleBulkAll() {
+    var checkAll = $('bulk-check-all');
+    if (!checkAll) return;
+    var checks = qsa('.bulk-check');
+    checks.forEach(function(c) {
+        var id = parseInt(c.dataset.id);
+        if (checkAll.checked) selectedMemberIds.add(id);
+        else selectedMemberIds.delete(id);
+        c.checked = checkAll.checked;
+    });
+    updateBulkBar();
+}
+
+function updateBulkBar() {
+    var bar = $('bulk-action-bar');
+    if (!bar) return;
+    if (selectedMemberIds.size > 0) {
+        bar.classList.remove('hidden');
+        $('bulk-count').textContent = selectedMemberIds.size + ' ausgewählt';
+    } else {
+        bar.classList.add('hidden');
+    }
+}
+
+async function bulkUpdateField(field) {
+    if (selectedMemberIds.size === 0) return;
+    var selectEl = $('bulk-' + field);
+    if (!selectEl) return;
+    var value = selectEl.value;
+    if (!value) { toast('Bitte einen Wert auswählen', 'error'); return; }
+    try {
+        var ids = Array.from(selectedMemberIds);
+        var updates = {};
+        updates[field] = value === '__none__' ? null : value;
+        var { error } = await sb.from('members').update(updates).in('id', ids);
+        if (error) throw error;
+        toast(ids.length + ' Mitglieder aktualisiert', 'success');
+        selectedMemberIds.clear();
+        loadMembers();
+    } catch (err) {
+        toast(err.message, 'error');
+    }
+}
+
+function renderPagination() {
+    var container = $('members-pagination');
+    if (!container) return;
+    var totalPages = Math.max(1, Math.ceil(totalMembers / pageSize));
+    if (totalMembers <= pageSize) {
+        container.innerHTML = '<span class="pagination-info">' + totalMembers + ' Mitglieder</span>';
+        return;
+    }
+    var html = '<div class="pagination-bar">';
+    html += '<button class="btn btn-secondary btn-sm" onclick="goToPage(' + (currentPage - 1) + ')"' + (currentPage === 0 ? ' disabled' : '') + '>\u25C0 Zur\u00fcck</button>';
+    html += '<span class="pagination-info">Seite ' + (currentPage + 1) + ' von ' + totalPages + ' (' + totalMembers + ' Mitglieder)</span>';
+    html += '<button class="btn btn-secondary btn-sm" onclick="goToPage(' + (currentPage + 1) + ')"' + (currentPage >= totalPages - 1 ? ' disabled' : '') + '>Weiter \u25B6</button>';
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function goToPage(page) {
+    currentPage = page;
+    loadMembers();
 }
 
 // ─── Member Detail ─────────────────────
@@ -492,14 +714,26 @@ async function loadMemberDetail(id) {
         // Load labels
         const { data: labels } = await sb.from('member_labels').select('label').eq('member_id', id);
         member.custom_labels = (labels || []).map(l => l.label);
-        // Cache member IDs for prev/next navigation
+        // Cache member IDs for prev/next navigation (paginated to bypass 1000-row default)
         if (cachedMemberIds.length === 0) {
-            var idRes = await sb.from('members').select('id').order('name').range(0, 9999);
-            cachedMemberIds = (idRes.data || []).map(function(m) { return m.id; });
+            var allIds = [];
+            var offset = 0;
+            var batchSize = 1000;
+            while (true) {
+                var idRes = await sb.from('members').select('id').order('name').range(offset, offset + batchSize - 1);
+                var batch = idRes.data || [];
+                batch.forEach(function(m) { allIds.push(m.id); });
+                if (batch.length < batchSize) break;
+                offset += batchSize;
+            }
+            cachedMemberIds = allIds;
         }
         renderMemberDetail(member);
+        window.currentViewingMemberName = member.name;
         renderMemberNav();
         loadTimeline(id);
+        // Auto-load Vita since it's the default tab
+        loadVita(id);
     } catch (err) {
         toast(err.message, 'error');
     }
@@ -590,16 +824,18 @@ function renderMemberDetail(m) {
     // Posts
     renderPosts(m.posts || []);
 
-    // Notes
-    $('notes-content').innerHTML = m.notes
-        ? `<div class="notes-area">${escapeHtml(m.notes)}</div>`
-        : '<p class="text-muted" style="padding:12px;font-size:0.85rem">Keine Notizen vorhanden</p>';
+    // Notes — editable textarea
+    $('notes-content').innerHTML =
+        '<div class="notes-edit-area" style="padding:16px">' +
+        '<textarea id="notes-textarea" rows="8" placeholder="Notizen hier eingeben..." style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--bg-tertiary);color:var(--text-primary);font-family:var(--font-body);font-size:0.85rem;resize:vertical">' + escapeHtml(m.notes || '') + '</textarea>' +
+        '<button class="btn btn-primary btn-sm" onclick="saveNotes()" style="margin-top:8px">\uD83D\uDCBE Notizen speichern</button>' +
+        '</div>';
 
-    // Reset tab to timeline
+    // Reset tab to vita (default view)
     qsa('.panel-tab').forEach(t => t.classList.remove('active'));
     qsa('.panel-content').forEach(c => c.classList.remove('active'));
-    qs('.panel-tab[data-tab="timeline"]').classList.add('active');
-    $('tab-timeline').classList.add('active');
+    qs('.panel-tab[data-tab="vita"]').classList.add('active');
+    $('tab-vita').classList.add('active');
 }
 
 async function updateMemberField(memberId, field, value) {
@@ -800,6 +1036,19 @@ async function addTimelineEntry() {
     }
 }
 
+// ─── Notes ───────────────────────────────
+async function saveNotes() {
+    if (!currentMemberId) return;
+    try {
+        var notes = $('notes-textarea').value;
+        var result = await sb.from('members').update({ notes: notes || null }).eq('id', currentMemberId);
+        if (result.error) throw result.error;
+        toast('Notizen gespeichert', 'success');
+    } catch (err) {
+        toast(err.message, 'error');
+    }
+}
+
 // ─── AI Export ───────────────────────────
 async function exportAIProfile(memberId) {
     try {
@@ -972,12 +1221,13 @@ async function loadVita(memberId) {
         // Collect all text items WITH labels for source tracking
         var textItems = [];
         comments.forEach(function(c) {
-            if (c.comment_text) textItems.push({ text: c.comment_text, label: 'Kommentar', context: (c.posts && c.posts.post_title) ? 'auf "' + c.posts.post_title + '"' : '' });
-            if (c.posts && c.posts.post_content) textItems.push({ text: c.posts.post_content, label: 'Post-Inhalt', context: c.posts.post_title || '' });
+            var pid = c.post_id || (c.posts && c.posts.id) || null;
+            if (c.comment_text) textItems.push({ text: c.comment_text, label: 'Kommentar', context: (c.posts && c.posts.post_title) ? 'auf "' + c.posts.post_title + '"' : '', postId: pid });
+            if (c.posts && c.posts.post_content) textItems.push({ text: c.posts.post_content, label: 'Post-Inhalt', context: c.posts.post_title || '', postId: pid });
         });
         posts.forEach(function(p) {
-            if (p.post_title) textItems.push({ text: p.post_title, label: 'Eigener Post', context: '' });
-            if (p.post_content) textItems.push({ text: p.post_content, label: 'Eigener Post-Inhalt', context: p.post_title || '' });
+            if (p.post_title) textItems.push({ text: p.post_title, label: 'Eigener Post', context: '', postId: p.id });
+            if (p.post_content) textItems.push({ text: p.post_content, label: 'Eigener Post-Inhalt', context: p.post_title || '', postId: p.id });
         });
         timeline.forEach(function(e) {
             if (e.content) textItems.push({ text: e.content, label: 'Notiz (' + (e.entry_type || 'note') + ')', context: '' });
@@ -1002,20 +1252,20 @@ async function loadVita(memberId) {
                         var start = Math.max(0, pos - 40);
                         var end = Math.min(item.text.length, pos + kw.length + 80);
                         var snippet = (start > 0 ? '...' : '') + item.text.substring(start, end) + (end < item.text.length ? '...' : '');
-                        sources.push({ label: item.label, context: item.context, snippet: snippet, keyword: kw });
+                        sources.push({ label: item.label, context: item.context, snippet: snippet, keyword: kw, fullText: item.text, postId: item.postId });
                     }
                 });
             });
             if (score > 0) {
                 topicScores[topic] = score;
-                // Deduplicate sources by snippet
+                // Deduplicate sources by label + keyword + context (not snippet)
                 var seen = {};
                 topicSources[topic] = sources.filter(function(s) {
-                    var key = s.snippet.substring(0, 60);
+                    var key = s.label + '|' + s.keyword + '|' + s.context;
                     if (seen[key]) return false;
                     seen[key] = true;
                     return true;
-                }).slice(0, 30); // show up to 30 sources per topic
+                }); // show ALL unique sources per topic
             }
         });
         var sortedTopics = Object.entries(topicScores).sort(function(a, b) { return b[1] - a[1]; });
@@ -1098,8 +1348,12 @@ async function loadVita(memberId) {
                 var sources = topicSources[topicName] || [];
                 html += '<div class="vita-topic-sources" id="' + panelId + '">';
                 if (sources.length > 0) {
-                    sources.forEach(function(s) {
-                        html += '<div class="vita-source-item">';
+                    // Store sources in global cache for popup access
+                    if (!window.vitaSourceCache) window.vitaSourceCache = {};
+                    sources.forEach(function(s, sIdx) {
+                        var cacheKey = 'src_' + idx + '_' + sIdx;
+                        window.vitaSourceCache[cacheKey] = s;
+                        html += '<div class="vita-source-item vita-source-clickable" onclick="showSourcePopup(\'' + cacheKey + '\')">';
                         html += '<span class="vita-source-label">' + escapeHtml(s.label) + '</span>';
                         if (s.context) html += ' <span style="font-size:11px;color:var(--text-muted)">' + escapeHtml(s.context) + '</span>';
                         html += '<div class="vita-source-snippet">"' + escapeHtml(s.snippet) + '"</div>';
@@ -1389,6 +1643,8 @@ async function loadKanban() {
 
         let query = sb.from('members').select('*').not('funnel_stage', 'is', null);
         if (kanbanFilterUser) query = query.eq('assigned_to', kanbanFilterUser);
+        if (kanbanSearchTerm) query = query.ilike('name', '%' + kanbanSearchTerm + '%');
+        if (kanbanAcqFilter) query = query.eq('acquisition_status', kanbanAcqFilter);
         const { data: members, error } = await query;
         if (error) throw error;
         const all = members || [];
@@ -1509,7 +1765,18 @@ async function loadTeamPage() {
 async function loadTeamMessages() {
     const listEl = $('team-messages-list');
     try {
-        const msgs = await api('team_messages');
+        const { data: rawMsgs, error } = await sb.from('team_messages')
+            .select('*, from_user:from_user_id(display_name), to_user:to_user_id(display_name), member:member_id(name)')
+            .or('from_user_id.eq.' + currentUser.id + ',to_user_id.eq.' + currentUser.id)
+            .order('created_at', { ascending: false });
+        if (error) throw error;
+        const msgs = (rawMsgs || []).map(function(m) {
+            return Object.assign({}, m, {
+                from_name: (m.from_user && m.from_user.display_name) || 'Unbekannt',
+                to_name: (m.to_user && m.to_user.display_name) || 'Unbekannt',
+                member_name: m.member ? m.member.name : null
+            });
+        });
         if (msgs.length === 0) {
             listEl.innerHTML = `
                 <div class="empty-state">
@@ -1644,10 +1911,20 @@ async function createUser() {
 }
 
 async function deleteUser(id) {
-    if (!confirm('Benutzer wirklich löschen?')) return;
+    // Bug 5: Prevent deleting the last admin
+    var targetUser = allUsers.find(function(u) { return u.id === id; });
+    if (targetUser && targetUser.role === 'admin') {
+        var activeAdmins = allUsers.filter(function(u) { return u.role === 'admin' && u.is_active !== false; });
+        if (activeAdmins.length <= 1) {
+            toast('Der letzte Admin kann nicht gelöscht werden', 'error');
+            return;
+        }
+    }
+    if (!confirm('Benutzer wirklich deaktivieren?')) return;
     try {
-        await api('delete_user', { method: 'POST', params: { id } });
-        toast('Benutzer gelöscht', 'success');
+        const { error } = await sb.from('crm_users').update({ is_active: false }).eq('id', id);
+        if (error) throw error;
+        toast('Benutzer deaktiviert', 'success');
         await loadUsers();
         loadSettings();
     } catch (err) {
@@ -1656,6 +1933,112 @@ async function deleteUser(id) {
 }
 
 // ─── Modals ──────────────────────────────
+// ─── Source Popup (Skool-Style) ──────────
+async function showSourcePopup(cacheKey) {
+    var s = window.vitaSourceCache && window.vitaSourceCache[cacheKey];
+    if (!s) return;
+    var memberName = window.currentViewingMemberName || '';
+    
+    // If we have a postId, fetch the full post + comments
+    if (s.postId) {
+        openModal('Lade Beitrag...', '<div class="empty-state"><p>\u23f3 Wird geladen...</p></div>', '');
+        try {
+            var postRes = await sb.from('posts').select('*').eq('id', s.postId).single();
+            var post = postRes.data;
+            if (!post) { fallbackSourcePopup(s); return; }
+            
+            var commRes = await sb.from('post_comments').select('*').eq('post_id', s.postId).order('created_at', { ascending: true });
+            var allComments = commRes.data || [];
+            
+            renderSkoolPostPopup(post, allComments, s.keyword, memberName);
+        } catch(e) {
+            fallbackSourcePopup(s);
+        }
+    } else {
+        fallbackSourcePopup(s);
+    }
+}
+
+function fallbackSourcePopup(s) {
+    var fullText = s.fullText || s.snippet;
+    var kw = s.keyword || '';
+    var body = '<div style="max-height:60vh;overflow-y:auto;padding:4px">';
+    if (kw) {
+        var regex = new RegExp('(' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+        body += '<div style="font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word">' + escapeHtml(fullText).replace(regex, '<mark style="background:#f59e0b;color:#000;padding:1px 2px;border-radius:2px">$1</mark>') + '</div>';
+    } else {
+        body += '<div style="font-size:13px;line-height:1.7;white-space:pre-wrap;word-break:break-word">' + escapeHtml(fullText) + '</div>';
+    }
+    body += '</div>';
+    openModal(s.label + (s.context ? ' \u2014 ' + s.context : ''), body, '<button class="btn btn-secondary" onclick="closeModal()">Schlie\u00dfen</button>');
+}
+
+function renderSkoolPostPopup(post, comments, keyword, memberName) {
+    var kw = keyword || '';
+    var highlightText = function(text) {
+        var escaped = escapeHtml(text || '');
+        if (kw) {
+            var regex = new RegExp('(' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+            return escaped.replace(regex, '<mark style="background:#f59e0b;color:#000;padding:1px 3px;border-radius:2px">$1</mark>');
+        }
+        return escaped;
+    };
+    
+    var body = '<div class="skool-post-popup">';
+    
+    // Post Card
+    body += '<div class="skool-post-card">';
+    // Author header
+    body += '<div class="skool-post-header">';
+    body += '<div class="skool-post-avatar" style="background:' + avatarColor(post.author_name || 'A') + '">' + initials(post.author_name || 'A') + '</div>';
+    body += '<div class="skool-post-author">';
+    body += '<div class="skool-post-author-name">' + escapeHtml(post.author_name || 'Unbekannt') + '</div>';
+    body += '<div class="skool-post-meta">';
+    if (post.category) body += '<span class="skool-post-category">' + escapeHtml(post.category) + '</span>';
+    if (post.posted_at) body += '<span>' + formatDate(post.posted_at) + '</span>';
+    body += '</div></div></div>';
+    
+    // Post title
+    body += '<div class="skool-post-title">' + highlightText(post.post_title || '') + '</div>';
+    
+    // Post content
+    if (post.post_content) {
+        body += '<div class="skool-post-content">' + highlightText(post.post_content).replace(/\n/g, '<br>') + '</div>';
+    }
+    
+    // Stats bar
+    body += '<div class="skool-post-stats">';
+    body += '<span>\ud83d\udc4d ' + (post.likes || 0) + ' Likes</span>';
+    body += '<span>\ud83d\udcac ' + comments.length + ' Kommentare</span>';
+    if (post.post_url) body += '<a href="' + escapeHtml(post.post_url) + '" target="_blank" style="color:var(--accent-blue);text-decoration:none;font-size:12px">\ud83d\udd17 Auf Skool \u00f6ffnen</a>';
+    body += '</div>';
+    body += '</div>'; // end post-card
+    
+    // Comments section
+    if (comments.length > 0) {
+        body += '<div class="skool-comments-section">';
+        body += '<div class="skool-comments-header">' + comments.length + ' Kommentare</div>';
+        comments.forEach(function(c) {
+            var isMember = memberName && (c.author_name === memberName);
+            body += '<div class="skool-comment' + (isMember ? ' skool-comment-highlight' : '') + '">';
+            body += '<div class="skool-comment-avatar" style="background:' + avatarColor(c.author_name || 'A') + '">' + initials(c.author_name || 'A') + '</div>';
+            body += '<div class="skool-comment-body">';
+            body += '<div class="skool-comment-author">';
+            body += '<strong>' + escapeHtml(c.author_name || 'Anonym') + '</strong>';
+            if (isMember) body += ' <span style="font-size:10px;background:var(--accent-blue);color:white;padding:1px 6px;border-radius:10px;margin-left:4px">Dieses Mitglied</span>';
+            if (c.comment_date) body += ' <span style="color:var(--text-muted);font-size:11px">' + escapeHtml(c.comment_date) + '</span>';
+            body += '</div>';
+            body += '<div class="skool-comment-text">' + highlightText(c.comment_text || '') + '</div>';
+            if (c.likes > 0) body += '<div class="skool-comment-likes">\ud83d\udc4d ' + c.likes + '</div>';
+            body += '</div></div>';
+        });
+        body += '</div>';
+    }
+    
+    body += '</div>';
+    openModal(escapeHtml(post.post_title || 'Beitrag'), body, '<button class="btn btn-secondary" onclick="closeModal()">Schlie\u00dfen</button>');
+}
+
 function openModal(title, bodyHtml, footerHtml) {
     $('modal-title').textContent = title;
     $('modal-body').innerHTML = bodyHtml;
@@ -1751,7 +2134,7 @@ async function saveMember() {
 function openEditMemberModal() {
     if (!currentMemberId) return;
     // Fetch current member data and populate a modal
-    api('member', { params: { id: currentMemberId } }).then(m => {
+    sb.from('members').select('*').eq('id', currentMemberId).single().then(function(res) { if (res.error) throw res.error; var m = res.data;
         const assignedOptions = allUsers.map(u => `<option value="${u.id}" ${m.assigned_to == u.id ? 'selected' : ''}>${escapeHtml(u.display_name)}</option>`).join('');
         const body = `
             <div class="form-row">
@@ -2207,11 +2590,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let searchTimeout;
     $('member-search').addEventListener('input', () => {
         clearTimeout(searchTimeout);
+        currentPage = 0;
         searchTimeout = setTimeout(loadMembers, 300);
     });
-    $('filter-status').addEventListener('change', loadMembers);
-    $('filter-membership').addEventListener('change', loadMembers);
-    $('filter-level').addEventListener('change', loadMembers);
+    $('filter-status').addEventListener('change', () => { currentPage = 0; loadMembers(); });
+    $('filter-membership').addEventListener('change', () => { currentPage = 0; loadMembers(); });
+    $('filter-level').addEventListener('change', () => { currentPage = 0; loadMembers(); });
 
     // Add member
     $('btn-add-member').addEventListener('click', openAddMemberModal);

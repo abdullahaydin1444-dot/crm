@@ -125,6 +125,12 @@
             <div class="page-header">
                 <h1>Dashboard</h1>
                 <div class="page-actions">
+                    <select id="dashboard-time-filter" class="filter-select" onchange="dashboardTimeFilter=this.value;loadDashboard()">
+                        <option value="all">Gesamt</option>
+                        <option value="week">Diese Woche</option>
+                        <option value="month">Dieser Monat</option>
+                        <option value="30days">Letzte 30 Tage</option>
+                    </select>
                     <button class="btn btn-secondary btn-sm" id="btn-refresh-dashboard">
                         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
                         Aktualisieren
@@ -178,6 +184,7 @@
                 <div class="dash-section">
                     <h3>Meine Aufgaben</h3>
                     <div class="my-tasks" id="my-tasks"></div>
+                    <button class="btn btn-primary btn-sm" onclick="openCreateTaskModal()" style="margin-top:10px">+ Aufgabe erstellen</button>
                 </div>
             </div>
 
@@ -192,14 +199,39 @@
                 </div>
             </div>
 
-            <div class="dashboard-grid">
-                <div class="dash-section">
-                    <h3>Mitgliedschaft</h3>
-                    <div class="chart-container" id="chart-membership"></div>
+            <!-- Community Cards: Free vs Premium -->
+            <div class="dashboard-grid community-cards-grid">
+                <div class="dash-section community-card community-card-free">
+                    <div class="community-card-header">
+                        <span class="community-card-icon" style="background:rgba(245,158,11,0.15);color:#f59e0b">🟡</span>
+                        <h3>Free Community</h3>
+                    </div>
+                    <div class="community-stats-mini" id="free-community-stats">
+                        <div class="community-mini-stat"><span class="community-mini-value" id="free-members">0</span><span class="community-mini-label">Mitglieder</span></div>
+                        <div class="community-mini-stat"><span class="community-mini-value" id="free-posts">0</span><span class="community-mini-label">Posts</span></div>
+                        <div class="community-mini-stat"><span class="community-mini-value" id="free-comments">0</span><span class="community-mini-label">Kommentare</span></div>
+                        <div class="community-mini-stat"><span class="community-mini-value" id="free-likes">0</span><span class="community-mini-label">Likes</span></div>
+                    </div>
+                    <div class="community-level-section">
+                        <h4>Level-Verteilung</h4>
+                        <div class="chart-container" id="chart-level-free"></div>
+                    </div>
                 </div>
-                <div class="dash-section">
-                    <h3>Level-Verteilung</h3>
-                    <div class="chart-container" id="chart-level"></div>
+                <div class="dash-section community-card community-card-premium">
+                    <div class="community-card-header">
+                        <span class="community-card-icon" style="background:rgba(59,130,246,0.15);color:#3b82f6">🔵</span>
+                        <h3>Premium Community</h3>
+                    </div>
+                    <div class="community-stats-mini" id="premium-community-stats">
+                        <div class="community-mini-stat"><span class="community-mini-value" id="premium-members">0</span><span class="community-mini-label">Mitglieder</span></div>
+                        <div class="community-mini-stat"><span class="community-mini-value" id="premium-posts">0</span><span class="community-mini-label">Posts</span></div>
+                        <div class="community-mini-stat"><span class="community-mini-value" id="premium-comments">0</span><span class="community-mini-label">Kommentare</span></div>
+                        <div class="community-mini-stat"><span class="community-mini-value" id="premium-likes">0</span><span class="community-mini-label">Likes</span></div>
+                    </div>
+                    <div class="community-level-section">
+                        <h4>Level-Verteilung</h4>
+                        <div class="chart-container" id="chart-level-premium"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -243,11 +275,13 @@
                 <table class="data-table" id="members-table">
                     <thead>
                         <tr>
+                            <th style="width:40px"><input type="checkbox" id="bulk-check-all" onchange="toggleBulkAll()"></th>
                             <th class="sortable" data-sort="name">Name</th>
-                            <th>Mitgliedschaft</th>
-                            <th>Status</th>
-                            <th>Level</th>
-                            <th>Stadt</th>
+                            <th class="sortable" data-sort="membership_type">Mitgliedschaft</th>
+                            <th class="sortable" data-sort="activity_status">Status</th>
+                            <th class="sortable" data-sort="progress_level">Level</th>
+                            <th class="sortable" data-sort="engagement_score">Engagement</th>
+                            <th class="sortable" data-sort="city">Stadt</th>
                             <th>Funnel</th>
                             <th>Zuständig</th>
                             <th class="sortable" data-sort="last_active">Letzte Aktivität</th>
@@ -256,6 +290,27 @@
                     <tbody id="members-tbody"></tbody>
                 </table>
             </div>
+            <!-- Bulk Action Bar -->
+            <div id="bulk-action-bar" class="bulk-action-bar hidden">
+                <span id="bulk-count" class="bulk-count">0 ausgewählt</span>
+                <select id="bulk-funnel_stage" class="filter-select">
+                    <option value="">Funnel zuweisen...</option>
+                    <option value="free_community">Free Community</option>
+                    <option value="recently_cancelled">Kürzlich Gekündigt</option>
+                    <option value="long_cancelled">Länger Gekündigt</option>
+                    <option value="__none__">— Kein Funnel —</option>
+                </select>
+                <button class="btn btn-primary btn-sm" onclick="bulkUpdateField('funnel_stage')">Anwenden</button>
+                <select id="bulk-acquisition_status" class="filter-select">
+                    <option value="">Akquise-Status...</option>
+                    <option value="hot_lead">🔥 Heißer Lead</option>
+                    <option value="in_progress">🟡 In Bearbeitung</option>
+                    <option value="no_interest">❌ Kein Interesse</option>
+                    <option value="__none__">— Kein Status —</option>
+                </select>
+                <button class="btn btn-primary btn-sm" onclick="bulkUpdateField('acquisition_status')">Anwenden</button>
+            </div>
+            <div id="members-pagination" class="members-pagination"></div>
             <div class="empty-state hidden" id="members-empty">
                 <svg viewBox="0 0 120 120" width="80" height="80" fill="none">
                     <circle cx="60" cy="60" r="50" stroke="var(--border-light)" stroke-width="2" stroke-dasharray="8 4"/>
@@ -300,8 +355,8 @@
                 <!-- RIGHT: Timeline + Posts -->
                 <div class="member-activity-panel">
                     <div class="panel-tabs">
-                        <button class="panel-tab active" data-tab="timeline">Verlauf</button>
-                        <button class="panel-tab" data-tab="vita">Vita</button>
+                        <button class="panel-tab active" data-tab="vita">Vita</button>
+                        <button class="panel-tab" data-tab="timeline">Verlauf</button>
                         <button class="panel-tab" data-tab="connections">Verbindungen</button>
                         <button class="panel-tab" data-tab="posts">Beiträge</button>
                         <button class="panel-tab" data-tab="notes">Notizen</button>
@@ -377,6 +432,13 @@
                 <h1>Kanban Board</h1>
                 <div class="page-actions">
                     <div class="kanban-filter" id="kanban-filter">
+                        <input type="text" id="kanban-search" class="filter-select" placeholder="🔍 Suche..." style="width:150px" oninput="kanbanSearchTerm=this.value;loadKanban()">
+                        <select id="kanban-acq-filter" class="filter-select" onchange="kanbanAcqFilter=this.value;loadKanban()">
+                            <option value="">Alle Akquise-Status</option>
+                            <option value="hot_lead">🔥 Heißer Lead</option>
+                            <option value="in_progress">🟡 In Bearbeitung</option>
+                            <option value="no_interest">❌ Kein Interesse</option>
+                        </select>
                         <span class="filter-label">Zuständig:</span>
                         <div class="kanban-filter-chips" id="kanban-filter-chips"></div>
                     </div>
