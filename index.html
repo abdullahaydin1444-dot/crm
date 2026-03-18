@@ -525,38 +525,21 @@
                 <h1>Daten Import</h1>
             </div>
             <div class="import-layout">
-                <div class="import-card">
-                    <h3>Mitglieder importieren</h3>
-                    <p class="text-muted">JSON-Datei mit Mitglieder-Daten hochladen (Array von Objekten).</p>
-                    <div class="import-drop" id="import-members-drop">
-                        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                        <span>Datei hierher ziehen oder klicken</span>
-                        <input type="file" id="import-members-file" accept=".json" hidden>
-                    </div>
-                    <div id="import-members-result" class="import-result"></div>
-                </div>
-                <div class="import-card">
-                    <h3>Posts importieren</h3>
-                    <p class="text-muted">JSON-Datei mit Post-Daten hochladen.</p>
-                    <div class="import-drop" id="import-posts-drop">
-                        <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                        <span>Datei hierher ziehen oder klicken</span>
-                        <input type="file" id="import-posts-file" accept=".json" hidden>
-                    </div>
-                    <div id="import-posts-result" class="import-result"></div>
-                </div>
+                <!-- ── Card 1: Post-Import ── -->
                 <div class="import-card import-card-wide">
-                    <h3>📋 Skool JSON einfügen</h3>
+                    <h3>📋 Skool Post-Import</h3>
                     <p class="text-muted">Skool-Scraper JSON einfügen — Posts, Kommentare und Mitglieder werden automatisch importiert und verknüpft.</p>
                     <div class="import-community-toggle">
                         <span class="toggle-label">Community wählen:</span>
                         <button class="btn btn-community active" id="btn-community-free" data-community="free" style="background:#f59e0b;color:#000">🟡 Free Community</button>
-                        <button class="btn btn-community" id="btn-community-paid" data-community="paid" style="background:#3b82f6;color:#fff">🔵 Bezahlte Community</button>
+                        <button class="btn btn-community" id="btn-community-paid" data-community="paid" style="background:#3b82f6;color:#fff">🔵 Premium Community</button>
                     </div>
-                    <textarea id="import-json-paste" class="import-json-textarea" rows="10" placeholder='Skool JSON hier einfügen...'></textarea>
+                    <textarea id="import-json-paste" class="import-json-textarea" rows="10" placeholder='Skool Post-JSON hier einfügen...'></textarea>
                     <div class="import-paste-actions">
                         <button class="btn btn-primary" id="btn-import-json-paste">📋 JSON Importieren</button>
                         <button class="btn btn-secondary" id="btn-clear-json-paste">Leeren</button>
+                        <label class="btn btn-secondary" for="import-posts-file" style="cursor:pointer">📂 Datei hochladen</label>
+                        <input type="file" id="import-posts-file" accept=".json" hidden>
                     </div>
                     <div id="import-json-progress" class="import-progress hidden">
                         <div class="import-progress-bar"><div class="import-progress-fill" id="import-progress-fill"></div></div>
@@ -565,16 +548,28 @@
                     <div id="import-json-log" class="import-log hidden"></div>
                     <div id="import-json-result" class="import-result"></div>
                 </div>
-                <div class="import-card">
-                    <h3>Demo-Daten</h3>
-                    <p class="text-muted">Beispieldaten laden, um die App zu testen.</p>
-                    <button class="btn btn-secondary" id="btn-import-demo">Demo-Daten laden</button>
-                    <div id="import-demo-result" class="import-result"></div>
-                </div>
-                <div class="import-card">
-                    <h3>Daten exportieren</h3>
-                    <p class="text-muted">Alle Daten als JSON herunterladen.</p>
-                    <button class="btn btn-secondary" id="btn-export-data">Exportieren</button>
+
+                <!-- ── Card 2: Mitglieder-Import ── -->
+                <div class="import-card import-card-wide">
+                    <h3>👥 Mitglieder-Import</h3>
+                    <p class="text-muted">Mitglieder-Daten als JSON einfügen oder Datei hochladen — Name, Bio, Membership, Stadt, etc. werden importiert.</p>
+                    <div class="import-community-toggle">
+                        <span class="toggle-label">Community wählen:</span>
+                        <button class="btn btn-community active" id="btn-member-community-free" data-community="free" style="background:#f59e0b;color:#000">🟡 Free Community</button>
+                        <button class="btn btn-community" id="btn-member-community-paid" data-community="paid" style="background:#3b82f6;color:#fff">🔵 Premium Community</button>
+                    </div>
+                    <textarea id="import-members-paste" class="import-json-textarea" rows="10" placeholder='Mitglieder JSON hier einfügen (Array von Objekten)...'></textarea>
+                    <div class="import-paste-actions">
+                        <button class="btn btn-primary" id="btn-import-members-paste">👥 Mitglieder Importieren</button>
+                        <button class="btn btn-secondary" id="btn-clear-members-paste">Leeren</button>
+                        <label class="btn btn-secondary" for="import-members-file" style="cursor:pointer">📂 Datei hochladen</label>
+                        <input type="file" id="import-members-file" accept=".json" hidden>
+                    </div>
+                    <div id="import-members-progress" class="import-progress hidden">
+                        <div class="import-progress-bar"><div class="import-progress-fill" id="import-members-progress-fill"></div></div>
+                        <span id="import-members-progress-text" class="import-progress-text"></span>
+                    </div>
+                    <div id="import-members-result" class="import-result"></div>
                 </div>
             </div>
         </div>

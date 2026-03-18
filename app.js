@@ -2707,12 +2707,19 @@ document.addEventListener('DOMContentLoaded', () => {
     $('btn-send-team-msg').addEventListener('click', sendTeamMessage);
 
     // Import
-    $('import-members-drop').addEventListener('click', () => $('import-members-file').click());
-    $('import-posts-drop').addEventListener('click', () => $('import-posts-file').click());
-    $('import-members-file').addEventListener('change', () => importFile('members'));
-    $('import-posts-file').addEventListener('change', () => importFile('posts'));
-    $('btn-import-demo').addEventListener('click', loadDemoData);
-    $('btn-export-data').addEventListener('click', exportData);
+    // Posts: file upload triggers Skool JSON import
+    $('import-posts-file').addEventListener('change', function(e) {
+        var file = e.target.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function(ev) {
+            $('import-json-paste').value = ev.target.result;
+            var btn = $('btn-import-json-paste');
+            btn.disabled = true; btn.textContent = '⏳ Importiere...';
+            importSkoolJSON(ev.target.result).finally(function() { btn.disabled = false; btn.textContent = '📋 JSON Importieren'; });
+        };
+        reader.readAsText(file);
+    });
 
     // Skool JSON paste + community toggle
     $('btn-community-free').addEventListener('click', function () {
@@ -2745,28 +2752,90 @@ document.addEventListener('DOMContentLoaded', () => {
         if (logEl) { logEl.innerHTML = ''; logEl.classList.add('hidden'); }
     });
 
-    // Demo data from empty state
-    $('btn-load-demo').addEventListener('click', async () => {
-        await loadDemoData();
-        loadMembers();
+    // ── Member Import: community toggle ──
+    var selectedMemberCommunity = 'free';
+    $('btn-member-community-free').addEventListener('click', function () {
+        selectedMemberCommunity = 'free';
+        $('btn-member-community-free').classList.add('active');
+        $('btn-member-community-paid').classList.remove('active');
+    });
+    $('btn-member-community-paid').addEventListener('click', function () {
+        selectedMemberCommunity = 'paid';
+        $('btn-member-community-paid').classList.add('active');
+        $('btn-member-community-free').classList.remove('active');
     });
 
-    // Import drag and drop
-    ['import-members-drop', 'import-posts-drop'].forEach(id => {
-        const el = $(id);
-        el.addEventListener('dragover', (e) => { e.preventDefault(); el.classList.add('drag-over'); });
-        el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
-        el.addEventListener('drop', (e) => {
-            e.preventDefault();
-            el.classList.remove('drag-over');
-            const fileId = id.replace('-drop', '-file');
-            const fileInput = $(fileId);
-            if (e.dataTransfer.files.length > 0) {
-                fileInput.files = e.dataTransfer.files;
-                const type = id.includes('members') ? 'members' : 'posts';
-                importFile(type);
+    // Member import: paste or file
+    async function importMembersJSON(jsonText) {
+        var data;
+        try { data = JSON.parse(jsonText); } catch(e) { toast('Ungültiges JSON: ' + e.message, 'error'); return; }
+        if (!Array.isArray(data)) data = [data];
+        var progEl = $('import-members-progress'); progEl.classList.remove('hidden');
+        var fillEl = $('import-members-progress-fill');
+        var textEl = $('import-members-progress-text');
+        var resEl = $('import-members-result');
+        var created = 0, updated = 0, errors = 0;
+        for (var i = 0; i < data.length; i++) {
+            var m = data[i];
+            var pct = Math.round(((i+1) / data.length) * 100);
+            fillEl.style.width = pct + '%';
+            textEl.textContent = (i+1) + ' / ' + data.length + ' Mitglieder...';
+            var row = {
+                name: m.name || m.Name || '',
+                skool_username: m.skool_username || m.username || m.skoolUsername || '',
+                bio: m.bio || m.Bio || null,
+                city: m.city || m.City || m.location || null,
+                country: m.country || m.Country || null,
+                membership_type: m.membership_type || (selectedMemberCommunity === 'paid' ? 'yearly_670' : 'free'),
+                membership_status: m.membership_status || m.status || 'active',
+                join_date: m.join_date || m.joinDate || m.joined || null,
+                renewal_date: m.renewal_date || m.renewalDate || null,
+                join_source: m.join_source || m.joinSource || 'direct',
+                is_premium: m.is_premium || (m.membership_type && m.membership_type.startsWith('yearly')) || false,
+                activity_status: m.activity_status || 'active'
+            };
+            if (!row.name || !row.skool_username) { errors++; continue; }
+            // Try update first
+            var upRes = await sb.from('members').update(row).eq('skool_username', row.skool_username);
+            if (upRes.error) { errors++; continue; }
+            // Check if update matched any rows by querying
+            var chk = await sb.from('members').select('id').eq('skool_username', row.skool_username);
+            if (chk.data && chk.data.length > 0) { updated++; }
+            else {
+                var insRes = await sb.from('members').insert(row);
+                if (insRes.error) { errors++; } else { created++; }
             }
-        });
+        }
+        fillEl.style.width = '100%';
+        textEl.textContent = 'Fertig!';
+        resEl.textContent = '✅ ' + created + ' erstellt, ' + updated + ' aktualisiert' + (errors > 0 ? ', ' + errors + ' Fehler' : '');
+        resEl.className = 'import-result success';
+        toast(created + ' erstellt, ' + updated + ' aktualisiert', 'success');
+    }
+    $('btn-import-members-paste').addEventListener('click', function () {
+        var jsonText = $('import-members-paste').value.trim();
+        if (!jsonText) { toast('Bitte Mitglieder-JSON einfuegen', 'error'); return; }
+        var btn = $('btn-import-members-paste');
+        btn.disabled = true; btn.textContent = '⏳ Importiere...';
+        importMembersJSON(jsonText).finally(function () { btn.disabled = false; btn.textContent = '👥 Mitglieder Importieren'; });
+    });
+    $('btn-clear-members-paste').addEventListener('click', function () {
+        $('import-members-paste').value = '';
+        $('import-members-result').textContent = '';
+        $('import-members-result').className = 'import-result';
+        $('import-members-progress').classList.add('hidden');
+    });
+    $('import-members-file').addEventListener('change', function(e) {
+        var file = e.target.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function(ev) {
+            $('import-members-paste').value = ev.target.result;
+            var btn = $('btn-import-members-paste');
+            btn.disabled = true; btn.textContent = '⏳ Importiere...';
+            importMembersJSON(ev.target.result).finally(function() { btn.disabled = false; btn.textContent = '👥 Mitglieder Importieren'; });
+        };
+        reader.readAsText(file);
     });
 
     // Settings
