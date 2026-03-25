@@ -1776,9 +1776,8 @@ function renderKanbanColumn(containerId, members, countId) {
 }
 
 function setupDragAndDrop() {
-    const cards = qsa('.kanban-card');
-    const columns = qsa('.kanban-cards');
-
+    // Cards are re-created each render, so fresh listeners are fine
+    var cards = qsa('.kanban-card');
     cards.forEach(function(card) {
         card.addEventListener('dragstart', function(e) {
             card.classList.add('dragging');
@@ -1787,7 +1786,7 @@ function setupDragAndDrop() {
         });
         card.addEventListener('dragend', function() {
             card.classList.remove('dragging');
-            columns.forEach(function(col) { col.classList.remove('drag-over'); });
+            qsa('.kanban-cards').forEach(function(c) { c.classList.remove('drag-over'); });
         });
         card.addEventListener('click', function(e) {
             if (!e.target.closest('.kanban-card-avatar')) {
@@ -1796,30 +1795,54 @@ function setupDragAndDrop() {
         });
     });
 
-    columns.forEach(function(col) {
-        col.addEventListener('dragover', function(e) {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            col.classList.add('drag-over');
-        });
-        col.addEventListener('dragleave', function() {
+    // Column listeners: use event delegation on the board, set up ONCE
+    if (window._kanbanDelegationReady) return;
+    window._kanbanDelegationReady = true;
+
+    var board = $('kanban-board');
+    if (!board) return;
+
+    board.addEventListener('dragover', function(e) {
+        var col = e.target.closest('.kanban-cards');
+        if (!col) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        col.classList.add('drag-over');
+    });
+
+    board.addEventListener('dragleave', function(e) {
+        var col = e.target.closest('.kanban-cards');
+        if (!col) return;
+        // Only remove drag-over if we're actually leaving the column
+        if (!col.contains(e.relatedTarget)) {
             col.classList.remove('drag-over');
-        });
-        col.addEventListener('drop', async function(e) {
-            e.preventDefault();
-            col.classList.remove('drag-over');
-            const memberId = e.dataTransfer.getData('text/plain');
-            const newAcqStatus = col.dataset.acqStatus;
-            if (!memberId) return;
-            try {
-                // newAcqStatus is '' for "Nicht zugewiesen" → set to null
-                await sb.from('members').update({ acquisition_status: newAcqStatus || null }).eq('id', memberId);
-                toast('Akquise-Status aktualisiert', 'success');
-                loadKanban();
-            } catch (err) {
-                toast(err.message, 'error');
-            }
-        });
+        }
+    });
+
+    var dropInProgress = false;
+    board.addEventListener('drop', async function(e) {
+        var col = e.target.closest('.kanban-cards');
+        if (!col) return;
+        e.preventDefault();
+        e.stopPropagation();
+        col.classList.remove('drag-over');
+
+        if (dropInProgress) return;
+        dropInProgress = true;
+
+        var memberId = e.dataTransfer.getData('text/plain');
+        var newAcqStatus = col.dataset.acqStatus;
+        if (!memberId) { dropInProgress = false; return; }
+
+        try {
+            await sb.from('members').update({ acquisition_status: newAcqStatus || null }).eq('id', memberId);
+            toast('Akquise-Status aktualisiert', 'success');
+            await loadKanban();
+        } catch (err) {
+            toast(err.message, 'error');
+        } finally {
+            dropInProgress = false;
+        }
     });
 }
 
