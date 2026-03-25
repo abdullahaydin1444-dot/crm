@@ -445,6 +445,12 @@
                 <div class="page-actions">
                     <div class="kanban-filter" id="kanban-filter">
                         <input type="text" id="kanban-search" class="filter-select" placeholder="🔍 Suche..." style="width:150px" oninput="kanbanSearchTerm=this.value;loadKanban()">
+                        <select id="kanban-funnel-filter" class="filter-select" onchange="kanbanFunnelFilter=this.value;loadKanban()">
+                            <option value="">Alle Stufen</option>
+                            <option value="free_community">🔵 Free Community</option>
+                            <option value="recently_cancelled">🟡 Kürzlich Gekündigt</option>
+                            <option value="long_cancelled">🔴 Länger Gekündigt</option>
+                        </select>
                         <span class="filter-label">Zuständig:</span>
                         <select id="kanban-team-filter" class="filter-select" onchange="kanbanFilterUser=this.value||null;loadKanban()">
                             <option value="">Alle</option>

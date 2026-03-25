@@ -24,6 +24,7 @@ let pageSize = 50;
 let totalMembers = 0;
 let selectedMemberIds = new Set();
 let kanbanSearchTerm = '';
+let kanbanFunnelFilter = '';
 let dashboardTimeFilter = 'all';
 
 // ─── Toast ───────────────────────────────
@@ -1717,6 +1718,7 @@ async function loadKanban() {
         let query = sb.from('members').select('*');
         if (kanbanFilterUser) query = query.eq('assigned_to', kanbanFilterUser);
         if (kanbanSearchTerm) query = query.ilike('name', '%' + kanbanSearchTerm + '%');
+        if (kanbanFunnelFilter) query = query.eq('funnel_stage', kanbanFunnelFilter);
         const { data: members, error } = await query;
         if (error) throw error;
         const all = members || [];
