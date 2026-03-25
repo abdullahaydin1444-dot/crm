@@ -13,6 +13,7 @@ let currentUser = null;   // { id, username, display_name, email, role, ... }
 let allUsers = [];
 let allMembers = [];
 let currentMemberId = null;
+let statusOptions = {};
 let audioFileData = null;
 let kanbanFilterUser = null;
 let sortCol = 'name';
@@ -170,6 +171,7 @@ function showApp() {
     $('app-wrapper').classList.remove('hidden');
     updateSidebarUser();
     loadUsers();
+    loadStatusOptions();
     startPolling();
     route();
 }
@@ -822,41 +824,29 @@ function renderMemberDetail(m) {
         mtEl.innerHTML = '<span style="font-size:14px;font-weight:700;color:' + mColor + ';letter-spacing:1px">' + mLabel + '</span>';
     }
 
-    // Build funnel/assigned selectors
-    const funnelOptions = ['', 'free_community', 'recently_cancelled', 'long_cancelled']
-        .map(v => `<option value="${v}" ${m.funnel_stage === v ? 'selected' : ''}>${v ? funnelLabel(v) : '— Kein Funnel —'}</option>`).join('');
-    const assignedOptions = ['<option value="">— Niemand —</option>']
-        .concat(allUsers.map(u => `<option value="${u.id}" ${m.assigned_to == u.id ? 'selected' : ''}>${escapeHtml(u.display_name)}</option>`)).join('');
+    // Build dynamic selectors from statusOptions
+    var funnelOptions = buildSelectOptions('funnel_stage', m.funnel_stage, '— Kein Funnel —');
+    var acqOptions = buildSelectOptions('acquisition_status', m.acquisition_status, '— Kein Status —');
+    var activityOptions = buildSelectOptions('activity_status', m.activity_status, '— Kein Status —');
+    var levelOptions = buildSelectOptions('progress_level', m.progress_level, '— Kein Level —');
+    var assignedOptions = '<option value="">— Niemand —</option>' +
+        allUsers.map(function(u) { return '<option value="' + u.id + '"' + (m.assigned_to == u.id ? ' selected' : '') + '>' + escapeHtml(u.display_name) + '</option>'; }).join('');
 
     // Fields (removed Mitgliedschaft - now shown at top)
-    $('detail-fields').innerHTML = `
-        <div class="field-row"><span class="field-label">Status</span><span class="field-value">${m.membership_status || '—'}</span></div>
-        <div class="field-row"><span class="field-label">Aktivität</span><span class="field-value">${m.activity_status || '—'}</span></div>
-        <div class="field-row"><span class="field-label">Level</span><span class="field-value">${levelLabel(m.progress_level)}</span></div>
-        <div class="field-row"><span class="field-label">Stadt</span><span class="field-value">${escapeHtml(m.city || '—')}</span></div>
-        <div class="field-row"><span class="field-label">Land</span><span class="field-value">${escapeHtml(m.country || '—')}</span></div>
-        <div class="field-row"><span class="field-label">Beitritt</span><span class="field-value">${formatDate(m.join_date)}</span></div>
-        <div class="field-row"><span class="field-label">Verlängerung</span><span class="field-value">${formatDate(m.renewal_date)}</span></div>
-        <div class="field-row"><span class="field-label">Letzte Aktivität</span><span class="field-value">${formatDate(m.last_active)}</span></div>
-        <div class="field-row"><span class="field-label">Quelle</span><span class="field-value">${escapeHtml(m.join_source || '—')}</span></div>
-        <div class="field-row">
-            <span class="field-label">Funnel-Stufe</span>
-            <span class="field-value"><select onchange="updateMemberField(${m.id},'funnel_stage',this.value)">${funnelOptions}</select></span>
-        </div>
-        <div class="field-row">
-            <span class="field-label">Zuständig</span>
-            <span class="field-value"><select onchange="updateMemberField(${m.id},'assigned_to',this.value)">${assignedOptions}</select></span>
-        </div>
-        <div class="field-row">
-            <span class="field-label">Akquise-Status</span>
-            <span class="field-value"><select onchange="updateMemberField(${m.id},'acquisition_status',this.value)" class="acq-status-select">
-                <option value="" ${!m.acquisition_status ? 'selected' : ''}>— Kein Status —</option>
-                <option value="hot_lead" ${m.acquisition_status === 'hot_lead' ? 'selected' : ''}>🔥 Heißer Lead</option>
-                <option value="in_progress" ${m.acquisition_status === 'in_progress' ? 'selected' : ''}>🟡 In Bearbeitung</option>
-                <option value="no_interest" ${m.acquisition_status === 'no_interest' ? 'selected' : ''}>❌ Kein Interesse</option>
-            </select></span>
-        </div>
-    `;
+    $('detail-fields').innerHTML =
+        '<div class="field-row"><span class="field-label">Status</span><span class="field-value">' + escapeHtml(m.membership_status || '—') + '</span></div>' +
+        '<div class="field-row"><span class="field-label">Aktivität</span><span class="field-value"><select onchange="updateMemberField(' + m.id + ',\'activity_status\',this.value)">' + activityOptions + '</select></span></div>' +
+        '<div class="field-row"><span class="field-label">Level</span><span class="field-value"><select onchange="updateMemberField(' + m.id + ',\'progress_level\',this.value)">' + levelOptions + '</select></span></div>' +
+        '<div class="field-row"><span class="field-label">Stadt</span><span class="field-value">' + escapeHtml(m.city || '—') + '</span></div>' +
+        '<div class="field-row"><span class="field-label">Land</span><span class="field-value">' + escapeHtml(m.country || '—') + '</span></div>' +
+        '<div class="field-row"><span class="field-label">Beitritt</span><span class="field-value">' + formatDate(m.join_date) + '</span></div>' +
+        '<div class="field-row"><span class="field-label">Verlängerung</span><span class="field-value">' + formatDate(m.renewal_date) + '</span></div>' +
+        '<div class="field-row"><span class="field-label">Letzte Aktivität</span><span class="field-value">' + formatDate(m.last_active) + '</span></div>' +
+        '<div class="field-row"><span class="field-label">Quelle</span><span class="field-value">' + escapeHtml(m.join_source || '—') + '</span></div>' +
+        '<div class="field-row"><span class="field-label">Funnel-Stufe</span><span class="field-value"><select onchange="updateMemberField(' + m.id + ',\'funnel_stage\',this.value)">' + funnelOptions + '</select></span></div>' +
+        '<div class="field-row"><span class="field-label">Zuständig</span><span class="field-value"><select onchange="updateMemberField(' + m.id + ',\'assigned_to\',this.value)">' + assignedOptions + '</select></span></div>' +
+        '<div class="field-row"><span class="field-label">Akquise-Status</span><span class="field-value"><select onchange="updateMemberField(' + m.id + ',\'acquisition_status\',this.value)" class="acq-status-select">' + acqOptions + '</select></span></div>';
+
 
     // Labels
     if (m.custom_labels && m.custom_labels.length > 0) {
@@ -1714,6 +1704,17 @@ async function loadKanban() {
             teamSelect.innerHTML = optionsHtml;
         }
 
+        // Populate funnel filter dropdown dynamically
+        var funnelSelect = $('kanban-funnel-filter');
+        if (funnelSelect) {
+            var funnelOpts = getOptionsForCategory('funnel_stage');
+            var fHTML = '<option value="">Alle Stufen</option>';
+            funnelOpts.forEach(function(o) {
+                fHTML += '<option value="' + escapeHtml(o.value) + '"' + (kanbanFunnelFilter === o.value ? ' selected' : '') + '>' + o.emoji + ' ' + escapeHtml(o.label) + '</option>';
+            });
+            funnelSelect.innerHTML = fHTML;
+        }
+
         // Query members — filter by assigned_to if a team member is selected
         let query = sb.from('members').select('*');
         if (kanbanFilterUser) query = query.eq('assigned_to', kanbanFilterUser);
@@ -1955,6 +1956,147 @@ async function loadSettings() {
 
     // Show/hide add user section based on admin
     $('add-user-section').style.display = isAdmin ? '' : 'none';
+
+    // Show/hide Status-Optionen tab based on admin
+    var statusTab = $('settings-tab-status');
+    if (statusTab) statusTab.style.display = isAdmin ? '' : 'none';
+}
+
+// ─── Settings Tabs ────────────────────────
+function switchSettingsTab(tabName) {
+    var tabs = document.querySelectorAll('.settings-tab');
+    var contents = document.querySelectorAll('.settings-tab-content');
+    tabs.forEach(function(t) { t.classList.toggle('active', t.dataset.settingsTab === tabName); });
+    contents.forEach(function(c) { c.classList.toggle('active', c.id === 'settings-content-' + tabName); });
+    if (tabName === 'status-options') renderStatusSettings();
+}
+
+// ─── Status Options ──────────────────────
+async function loadStatusOptions() {
+    try {
+        var res = await sb.from('status_options').select('*').eq('is_active', true).order('position');
+        if (res.error) throw res.error;
+        statusOptions = {};
+        (res.data || []).forEach(function(o) {
+            if (!statusOptions[o.category]) statusOptions[o.category] = [];
+            statusOptions[o.category].push(o);
+        });
+    } catch (err) {
+        console.error('loadStatusOptions:', err.message);
+    }
+}
+
+function getOptionsForCategory(category) {
+    return statusOptions[category] || [];
+}
+
+function buildSelectOptions(category, selectedValue, emptyLabel) {
+    var opts = getOptionsForCategory(category);
+    var html = '<option value=""' + (!selectedValue ? ' selected' : '') + '>' + escapeHtml(emptyLabel || '— Keine —') + '</option>';
+    opts.forEach(function(o) {
+        html += '<option value="' + escapeHtml(o.value) + '"' + (selectedValue === o.value ? ' selected' : '') + '>' + o.emoji + ' ' + escapeHtml(o.label) + '</option>';
+    });
+    return html;
+}
+
+var STATUS_CATEGORY_LABELS = {
+    funnel_stage: '📊 Funnel-Stufe',
+    acquisition_status: '🎯 Akquise-Status',
+    activity_status: '📍 Aktivität',
+    progress_level: '📈 Level',
+    membership_type: '💳 Mitgliedschaft'
+};
+
+function renderStatusSettings() {
+    var container = $('status-options-container');
+    if (!container) return;
+    var categories = ['funnel_stage', 'acquisition_status', 'activity_status', 'progress_level', 'membership_type'];
+    var html = '<p class="text-muted" style="margin-bottom:16px">Status-Werte verwalten — Reihenfolge ändern, neue hinzufügen oder bestehende löschen.</p>';
+
+    categories.forEach(function(cat) {
+        var catLabel = STATUS_CATEGORY_LABELS[cat] || cat;
+        var opts = getOptionsForCategory(cat);
+        html += '<div class="status-category-section">';
+        html += '<div class="status-category-header">';
+        html += '<h4>' + catLabel + '</h4>';
+        html += '<span class="badge badge-gray">' + opts.length + ' Optionen</span>';
+        html += '</div>';
+        html += '<div class="status-options-list" id="status-list-' + cat + '">';
+        opts.forEach(function(o, idx) {
+            html += '<div class="status-option-item" data-id="' + o.id + '">';
+            html += '<span class="status-option-emoji">' + (o.emoji || '') + '</span>';
+            html += '<span class="status-option-label">' + escapeHtml(o.label) + '</span>';
+            html += '<span class="status-option-value text-muted">' + escapeHtml(o.value) + '</span>';
+            html += '<div class="status-option-actions">';
+            html += '<button class="btn-icon" onclick="moveStatusOption(' + o.id + ',-1,\'' + cat + '\')" title="Nach oben"' + (idx === 0 ? ' disabled' : '') + '>▲</button>';
+            html += '<button class="btn-icon" onclick="moveStatusOption(' + o.id + ',1,\'' + cat + '\')" title="Nach unten"' + (idx === opts.length - 1 ? ' disabled' : '') + '>▼</button>';
+            html += '<button class="btn-icon" onclick="deleteStatusOption(' + o.id + ',\'' + cat + '\')" title="Löschen" style="color:var(--accent-red)">✕</button>';
+            html += '</div>';
+            html += '</div>';
+        });
+        html += '</div>';
+        // Add new form
+        html += '<div class="status-add-row">';
+        html += '<input type="text" id="new-emoji-' + cat + '" placeholder="Emoji" class="status-add-emoji" maxlength="4">';
+        html += '<input type="text" id="new-label-' + cat + '" placeholder="Anzeigename" class="status-add-label">';
+        html += '<input type="text" id="new-value-' + cat + '" placeholder="DB-Wert (z.B. new_status)" class="status-add-value">';
+        html += '<button class="btn btn-primary btn-sm" onclick="addStatusOption(\'' + cat + '\')">+ Hinzufügen</button>';
+        html += '</div>';
+        html += '</div>';
+    });
+    container.innerHTML = html;
+}
+
+async function addStatusOption(category) {
+    var emoji = $('new-emoji-' + category).value.trim();
+    var label = $('new-label-' + category).value.trim();
+    var value = $('new-value-' + category).value.trim();
+    if (!label || !value) { toast('Label und DB-Wert sind Pflichtfelder', 'error'); return; }
+    // Determine next position
+    var opts = getOptionsForCategory(category);
+    var nextPos = opts.length > 0 ? opts[opts.length - 1].position + 1 : 1;
+    try {
+        var res = await sb.from('status_options').insert({ category: category, value: value, label: label, emoji: emoji, position: nextPos });
+        if (res.error) throw res.error;
+        toast('Option hinzugefügt', 'success');
+        await loadStatusOptions();
+        renderStatusSettings();
+    } catch (err) {
+        toast(err.message, 'error');
+    }
+}
+
+async function deleteStatusOption(id, category) {
+    if (!confirm('Diese Status-Option wirklich löschen?')) return;
+    try {
+        var res = await sb.from('status_options').delete().eq('id', id);
+        if (res.error) throw res.error;
+        toast('Option gelöscht', 'success');
+        await loadStatusOptions();
+        renderStatusSettings();
+    } catch (err) {
+        toast(err.message, 'error');
+    }
+}
+
+async function moveStatusOption(id, direction, category) {
+    var opts = getOptionsForCategory(category);
+    var idx = opts.findIndex(function(o) { return o.id === id; });
+    if (idx === -1) return;
+    var swapIdx = idx + direction;
+    if (swapIdx < 0 || swapIdx >= opts.length) return;
+
+    // Swap positions
+    var posA = opts[idx].position;
+    var posB = opts[swapIdx].position;
+    try {
+        await sb.from('status_options').update({ position: posB }).eq('id', opts[idx].id);
+        await sb.from('status_options').update({ position: posA }).eq('id', opts[swapIdx].id);
+        await loadStatusOptions();
+        renderStatusSettings();
+    } catch (err) {
+        toast(err.message, 'error');
+    }
 }
 
 async function createUser() {

@@ -589,43 +589,57 @@
             <div class="page-header">
                 <h1>Einstellungen</h1>
             </div>
-            <div class="settings-layout">
-                <div class="settings-section">
-                    <h3>Team-Mitglieder</h3>
-                    <p class="text-muted">Benutzer verwalten und neue Team-Mitglieder einladen.</p>
-                    <div id="users-list" class="users-list"></div>
-                    <div class="settings-add-user" id="add-user-section">
-                        <h4>Neues Team-Mitglied</h4>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>Benutzername</label>
-                                <input type="text" id="new-user-username" placeholder="benutzername">
+            <!-- Settings Sub-Tabs -->
+            <div class="settings-tabs">
+                <button class="settings-tab active" data-settings-tab="team" onclick="switchSettingsTab('team')">👥 Team</button>
+                <button class="settings-tab" data-settings-tab="status-options" id="settings-tab-status" onclick="switchSettingsTab('status-options')">⚙️ Status-Optionen</button>
+            </div>
+            <!-- Tab: Team -->
+            <div class="settings-tab-content active" id="settings-content-team">
+                <div class="settings-layout">
+                    <div class="settings-section">
+                        <h3>Team-Mitglieder</h3>
+                        <p class="text-muted">Benutzer verwalten und neue Team-Mitglieder einladen.</p>
+                        <div id="users-list" class="users-list"></div>
+                        <div class="settings-add-user" id="add-user-section">
+                            <h4>Neues Team-Mitglied</h4>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>Benutzername</label>
+                                    <input type="text" id="new-user-username" placeholder="benutzername">
+                                </div>
+                                <div class="form-group">
+                                    <label>Anzeigename</label>
+                                    <input type="text" id="new-user-display" placeholder="Max Mustermann">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>E-Mail</label>
+                                    <input type="email" id="new-user-email" placeholder="mail@example.com">
+                                </div>
+                                <div class="form-group">
+                                    <label>Passwort</label>
+                                    <input type="password" id="new-user-password" placeholder="••••••••">
+                                </div>
                             </div>
                             <div class="form-group">
-                                <label>Anzeigename</label>
-                                <input type="text" id="new-user-display" placeholder="Max Mustermann">
+                                <label>Rolle</label>
+                                <select id="new-user-role" class="filter-select">
+                                    <option value="member">Mitarbeiter</option>
+                                    <option value="admin">Administrator</option>
+                                </select>
                             </div>
+                            <button class="btn btn-primary btn-sm" id="btn-create-user">Benutzer erstellen</button>
+                            <div id="create-user-result" class="import-result"></div>
                         </div>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label>E-Mail</label>
-                                <input type="email" id="new-user-email" placeholder="mail@example.com">
-                            </div>
-                            <div class="form-group">
-                                <label>Passwort</label>
-                                <input type="password" id="new-user-password" placeholder="••••••••">
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label>Rolle</label>
-                            <select id="new-user-role" class="filter-select">
-                                <option value="member">Mitarbeiter</option>
-                                <option value="admin">Administrator</option>
-                            </select>
-                        </div>
-                        <button class="btn btn-primary btn-sm" id="btn-create-user">Benutzer erstellen</button>
-                        <div id="create-user-result" class="import-result"></div>
                     </div>
+                </div>
+            </div>
+            <!-- Tab: Status-Optionen (Admin only) -->
+            <div class="settings-tab-content" id="settings-content-status-options">
+                <div class="settings-layout">
+                    <div id="status-options-container"></div>
                 </div>
             </div>
         </div>
