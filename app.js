@@ -31,6 +31,10 @@ let dashboardTimeFilter = 'all';
 // ─── Toast ───────────────────────────────
 function toast(message, type = 'info') {
     const container = document.getElementById('toast-container');
+    // Remove any existing toast with the exact same message to prevent stacking
+    container.querySelectorAll('.toast').forEach(function(t) {
+        if (t.textContent === message) t.remove();
+    });
     const el = document.createElement('div');
     el.className = `toast toast-${type}`;
     el.textContent = message;
@@ -1779,6 +1783,7 @@ function setupDragAndDrop() {
     // Cards are re-created each render, so fresh listeners are fine
     var cards = qsa('.kanban-card');
     cards.forEach(function(card) {
+        card.setAttribute('draggable', 'true');
         card.addEventListener('dragstart', function(e) {
             card.classList.add('dragging');
             e.dataTransfer.setData('text/plain', card.dataset.memberId);
@@ -1813,26 +1818,28 @@ function setupDragAndDrop() {
     board.addEventListener('dragleave', function(e) {
         var col = e.target.closest('.kanban-cards');
         if (!col) return;
-        // Only remove drag-over if we're actually leaving the column
         if (!col.contains(e.relatedTarget)) {
             col.classList.remove('drag-over');
         }
     });
 
-    var dropInProgress = false;
+    // Track which member is currently being processed to prevent ALL duplicates
+    var processingMemberId = null;
     board.addEventListener('drop', async function(e) {
         var col = e.target.closest('.kanban-cards');
         if (!col) return;
         e.preventDefault();
         e.stopPropagation();
+        e.stopImmediatePropagation();
         col.classList.remove('drag-over');
-
-        if (dropInProgress) return;
-        dropInProgress = true;
 
         var memberId = e.dataTransfer.getData('text/plain');
         var newAcqStatus = col.dataset.acqStatus;
-        if (!memberId) { dropInProgress = false; return; }
+        if (!memberId) return;
+
+        // Hard lock: skip if we're already processing ANY drop
+        if (processingMemberId) return;
+        processingMemberId = memberId;
 
         try {
             await sb.from('members').update({ acquisition_status: newAcqStatus || null }).eq('id', memberId);
@@ -1841,7 +1848,8 @@ function setupDragAndDrop() {
         } catch (err) {
             toast(err.message, 'error');
         } finally {
-            dropInProgress = false;
+            // Small delay before clearing lock to prevent any lingering events
+            setTimeout(function() { processingMemberId = null; }, 200);
         }
     });
 }
