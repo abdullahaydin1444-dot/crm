@@ -445,41 +445,45 @@
                 <div class="page-actions">
                     <div class="kanban-filter" id="kanban-filter">
                         <input type="text" id="kanban-search" class="filter-select" placeholder="🔍 Suche..." style="width:150px" oninput="kanbanSearchTerm=this.value;loadKanban()">
-                        <select id="kanban-acq-filter" class="filter-select" onchange="kanbanAcqFilter=this.value;loadKanban()">
-                            <option value="">Alle Akquise-Status</option>
-                            <option value="hot_lead">🔥 Heißer Lead</option>
-                            <option value="in_progress">🟡 In Bearbeitung</option>
-                            <option value="no_interest">❌ Kein Interesse</option>
-                        </select>
                         <span class="filter-label">Zuständig:</span>
-                        <div class="kanban-filter-chips" id="kanban-filter-chips"></div>
+                        <select id="kanban-team-filter" class="filter-select" onchange="kanbanFilterUser=this.value||null;loadKanban()">
+                            <option value="">Alle</option>
+                        </select>
                     </div>
                 </div>
             </div>
             <div class="kanban-board" id="kanban-board">
-                <div class="kanban-column" data-stage="free_community">
-                    <div class="kanban-column-header">
-                        <span class="kanban-col-dot" style="background:#3b82f6"></span>
-                        <h3>Free Community</h3>
-                        <span class="kanban-count" id="kanban-count-free">0</span>
-                    </div>
-                    <div class="kanban-cards" id="kanban-free" data-stage="free_community"></div>
-                </div>
-                <div class="kanban-column" data-stage="recently_cancelled">
-                    <div class="kanban-column-header">
-                        <span class="kanban-col-dot" style="background:#f59e0b"></span>
-                        <h3>Kürzlich Gekündigt</h3>
-                        <span class="kanban-count" id="kanban-count-recent">0</span>
-                    </div>
-                    <div class="kanban-cards" id="kanban-recent" data-stage="recently_cancelled"></div>
-                </div>
-                <div class="kanban-column" data-stage="long_cancelled">
+                <div class="kanban-column" data-acq-status="hot_lead">
                     <div class="kanban-column-header">
                         <span class="kanban-col-dot" style="background:#ef4444"></span>
-                        <h3>Länger Gekündigt</h3>
-                        <span class="kanban-count" id="kanban-count-long">0</span>
+                        <h3>🔥 Heißer Lead</h3>
+                        <span class="kanban-count" id="kanban-count-hot">0</span>
                     </div>
-                    <div class="kanban-cards" id="kanban-long" data-stage="long_cancelled"></div>
+                    <div class="kanban-cards" id="kanban-hot" data-acq-status="hot_lead"></div>
+                </div>
+                <div class="kanban-column" data-acq-status="in_progress">
+                    <div class="kanban-column-header">
+                        <span class="kanban-col-dot" style="background:#f59e0b"></span>
+                        <h3>🟡 In Bearbeitung</h3>
+                        <span class="kanban-count" id="kanban-count-progress">0</span>
+                    </div>
+                    <div class="kanban-cards" id="kanban-progress" data-acq-status="in_progress"></div>
+                </div>
+                <div class="kanban-column" data-acq-status="no_interest">
+                    <div class="kanban-column-header">
+                        <span class="kanban-col-dot" style="background:#6b7280"></span>
+                        <h3>❌ Kein Interesse</h3>
+                        <span class="kanban-count" id="kanban-count-noint">0</span>
+                    </div>
+                    <div class="kanban-cards" id="kanban-noint" data-acq-status="no_interest"></div>
+                </div>
+                <div class="kanban-column" data-acq-status="">
+                    <div class="kanban-column-header">
+                        <span class="kanban-col-dot" style="background:#3b82f6"></span>
+                        <h3>📋 Nicht zugewiesen</h3>
+                        <span class="kanban-count" id="kanban-count-none">0</span>
+                    </div>
+                    <div class="kanban-cards" id="kanban-none" data-acq-status=""></div>
                 </div>
             </div>
         </div>

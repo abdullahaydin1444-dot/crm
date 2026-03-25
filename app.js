@@ -24,7 +24,6 @@ let pageSize = 50;
 let totalMembers = 0;
 let selectedMemberIds = new Set();
 let kanbanSearchTerm = '';
-let kanbanAcqFilter = '';
 let dashboardTimeFilter = 'all';
 
 // ─── Toast ───────────────────────────────
@@ -1695,32 +1694,46 @@ function renderConnectionSection(title, subtitle, items, color) {
 // ─── Kanban ──────────────────────────────
 async function loadKanban() {
     try {
-        // Load filter chips
+        // Populate team member dropdown
         if (allUsers.length === 0) await loadUsers();
-        const chipsEl = $('kanban-filter-chips');
-        chipsEl.innerHTML = `<div class="filter-chip ${!kanbanFilterUser ? 'active' : ''}" data-user="">Alle</div>` +
-            allUsers.map(u => `<div class="filter-chip ${kanbanFilterUser == u.id ? 'active' : ''}" data-user="${u.id}">${escapeHtml(u.display_name)}</div>`).join('');
+        const teamSelect = $('kanban-team-filter');
+        if (teamSelect) {
+            const isAdmin = currentUser && currentUser.role === 'admin';
+            let optionsHtml = '<option value="">Alle</option>';
+            if (isAdmin) {
+                // Admin sees all team members
+                allUsers.forEach(function(u) {
+                    optionsHtml += '<option value="' + u.id + '"' + (kanbanFilterUser == u.id ? ' selected' : '') + '>' + escapeHtml(u.display_name) + '</option>';
+                });
+            } else {
+                // Regular member sees only themselves (pre-selected)
+                optionsHtml = '<option value="' + currentUser.id + '" selected>' + escapeHtml(currentUser.display_name) + '</option>';
+                kanbanFilterUser = String(currentUser.id);
+            }
+            teamSelect.innerHTML = optionsHtml;
+        }
 
-        chipsEl.querySelectorAll('.filter-chip').forEach(chip => {
-            chip.onclick = () => {
-                kanbanFilterUser = chip.dataset.user || null;
-                loadKanban();
-            };
-        });
-
-        let query = sb.from('members').select('*').not('funnel_stage', 'is', null);
+        // Query members — filter by assigned_to if a team member is selected
+        let query = sb.from('members').select('*');
         if (kanbanFilterUser) query = query.eq('assigned_to', kanbanFilterUser);
         if (kanbanSearchTerm) query = query.ilike('name', '%' + kanbanSearchTerm + '%');
-        if (kanbanAcqFilter) query = query.eq('acquisition_status', kanbanAcqFilter);
         const { data: members, error } = await query;
         if (error) throw error;
         const all = members || [];
-        const grouped = { free_community: [], recently_cancelled: [], long_cancelled: [] };
-        all.forEach(m => { if (grouped[m.funnel_stage]) grouped[m.funnel_stage].push(m); });
 
-        renderKanbanColumn('kanban-free', grouped.free_community, 'kanban-count-free');
-        renderKanbanColumn('kanban-recent', grouped.recently_cancelled, 'kanban-count-recent');
-        renderKanbanColumn('kanban-long', grouped.long_cancelled, 'kanban-count-long');
+        // Group by acquisition_status
+        const grouped = { hot_lead: [], in_progress: [], no_interest: [], none: [] };
+        all.forEach(function(m) {
+            if (m.acquisition_status === 'hot_lead') grouped.hot_lead.push(m);
+            else if (m.acquisition_status === 'in_progress') grouped.in_progress.push(m);
+            else if (m.acquisition_status === 'no_interest') grouped.no_interest.push(m);
+            else grouped.none.push(m);
+        });
+
+        renderKanbanColumn('kanban-hot', grouped.hot_lead, 'kanban-count-hot');
+        renderKanbanColumn('kanban-progress', grouped.in_progress, 'kanban-count-progress');
+        renderKanbanColumn('kanban-noint', grouped.no_interest, 'kanban-count-noint');
+        renderKanbanColumn('kanban-none', grouped.none, 'kanban-count-none');
 
         setupDragAndDrop();
     } catch (err) {
@@ -1737,63 +1750,68 @@ function renderKanbanColumn(containerId, members, countId) {
         return;
     }
 
-    container.innerHTML = members.map(m => `
-        <div class="kanban-card" draggable="true" data-member-id="${m.id}">
-            <div class="kanban-card-header">
-                <div class="kanban-card-avatar" style="background:${avatarColor(m.name)}">${initials(m.name)}</div>
-                <div class="kanban-card-name">${escapeHtml(m.name)}</div>
-            </div>
-            <div class="kanban-card-details">
-                ${membershipBadge(m.membership_type)}
-                ${statusBadge(m.activity_status)}
-            </div>
-            <div class="kanban-card-footer">
-                <span>${escapeHtml(m.assigned_name || 'Nicht zugewiesen')}</span>
-                <span>${relativeTime(m.last_active)}</span>
-            </div>
-        </div>
-    `).join('');
+    container.innerHTML = members.map(function(m) {
+        var acqLabel = '';
+        if (m.acquisition_status === 'hot_lead') acqLabel = '🔥 Heißer Lead';
+        else if (m.acquisition_status === 'in_progress') acqLabel = '🟡 In Bearbeitung';
+        else if (m.acquisition_status === 'no_interest') acqLabel = '❌ Kein Interesse';
+
+        return '<div class="kanban-card" draggable="true" data-member-id="' + m.id + '">' +
+            '<div class="kanban-card-header">' +
+                '<div class="kanban-card-avatar" style="background:' + avatarColor(m.name) + '">' + initials(m.name) + '</div>' +
+                '<div class="kanban-card-name">' + escapeHtml(m.name) + '</div>' +
+            '</div>' +
+            '<div class="kanban-card-details">' +
+                membershipBadge(m.membership_type) +
+                statusBadge(m.activity_status) +
+            '</div>' +
+            '<div class="kanban-card-footer">' +
+                '<span>' + escapeHtml(m.assigned_name || 'Nicht zugewiesen') + '</span>' +
+            '</div>' +
+        '</div>';
+    }).join('');
 }
 
 function setupDragAndDrop() {
     const cards = qsa('.kanban-card');
     const columns = qsa('.kanban-cards');
 
-    cards.forEach(card => {
-        card.addEventListener('dragstart', (e) => {
+    cards.forEach(function(card) {
+        card.addEventListener('dragstart', function(e) {
             card.classList.add('dragging');
             e.dataTransfer.setData('text/plain', card.dataset.memberId);
             e.dataTransfer.effectAllowed = 'move';
         });
-        card.addEventListener('dragend', () => {
+        card.addEventListener('dragend', function() {
             card.classList.remove('dragging');
-            columns.forEach(col => col.classList.remove('drag-over'));
+            columns.forEach(function(col) { col.classList.remove('drag-over'); });
         });
-        card.addEventListener('click', (e) => {
+        card.addEventListener('click', function(e) {
             if (!e.target.closest('.kanban-card-avatar')) {
-                location.hash = `member/${card.dataset.memberId}`;
+                location.hash = 'member/' + card.dataset.memberId;
             }
         });
     });
 
-    columns.forEach(col => {
-        col.addEventListener('dragover', (e) => {
+    columns.forEach(function(col) {
+        col.addEventListener('dragover', function(e) {
             e.preventDefault();
             e.dataTransfer.dropEffect = 'move';
             col.classList.add('drag-over');
         });
-        col.addEventListener('dragleave', () => {
+        col.addEventListener('dragleave', function() {
             col.classList.remove('drag-over');
         });
-        col.addEventListener('drop', async (e) => {
+        col.addEventListener('drop', async function(e) {
             e.preventDefault();
             col.classList.remove('drag-over');
             const memberId = e.dataTransfer.getData('text/plain');
-            const newStage = col.dataset.stage;
-            if (!memberId || !newStage) return;
+            const newAcqStatus = col.dataset.acqStatus;
+            if (!memberId) return;
             try {
-                await sb.from('members').update({ funnel_stage: newStage }).eq('id', memberId);
-                toast('Mitglied verschoben', 'success');
+                // newAcqStatus is '' for "Nicht zugewiesen" → set to null
+                await sb.from('members').update({ acquisition_status: newAcqStatus || null }).eq('id', memberId);
+                toast('Akquise-Status aktualisiert', 'success');
                 loadKanban();
             } catch (err) {
                 toast(err.message, 'error');
